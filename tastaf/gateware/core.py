@@ -12,26 +12,62 @@ from . import uart
 # generate a really simple test for now
 def make_bootloader():
     uart_addr = 0
-    delay_ms = 50
+    delay_ms = 5000
     delay = int((12e6*(delay_ms/1e3))//(4*3))
     fw = [
     L("main"),
-        # start transmitting a low ascii character
-        MOVI(R5, ord('0')),
-    L("transmit"),
-        # transmit the current character. since the delay is so long we don't
-        # need to check the FIFO here
-        STXA(R5, uart_addr+2),
-        # transmit the next character
-        ADDI(R5, R5, 1),
-        # set up delay until the next transmission
+        # wait for the user to type junk and fill up the FIFO
         MOVI(R7, (delay>>16)+1),
         MOVI(R6, delay&0xFFFF),
-    L("wait"), # wait that delay out
+    L("wait_1"),
         SUBI(R6, R6, 1),
         SBCI(R7, R7, 0),
-        BNZ("wait"),
-        J("transmit"),
+        BNZ("wait_1"),
+
+        MOVI(R5, ord("A")),
+        STXA(R5, uart_addr+6),
+
+    # blast the FIFO back at them
+    L("blast_1"),
+        # get a character
+        LDXA(R5, uart_addr+4),
+        ROLI(R5, R5, 1),
+        BS1("done_1"), # there wasn't any, we are done here
+        # wait for space to transmit it
+    L("txwait_1"),
+        LDXA(R4, uart_addr+6),
+        ANDI(R4, R4, 1),
+        BZ0("txwait_1"),
+        # then transmit it
+        STXA(R5, uart_addr+6),
+        J("blast_1"),
+    L("done_1"),
+
+        # wait for the user to type junk and fill up the FIFO
+        MOVI(R7, (delay>>16)+1),
+        MOVI(R6, delay&0xFFFF),
+    L("wait_2"),
+        SUBI(R6, R6, 1),
+        SBCI(R7, R7, 0),
+        BNZ("wait_2"),
+
+    MOVI(R5, ord("B")<<8),
+    STXA(R5, uart_addr+7),
+
+    # blast the FIFO back at them
+    L("blast_2"),
+        # get a character
+        LDXA(R5, uart_addr+5),
+        ANDI(R4, R5, 1),
+        BZ0("main"), # there wasn't any, we are done here
+        # wait for space to transmit it
+    L("txwait_2"),
+        LDXA(R4, uart_addr+7),
+        ANDI(R4, R4, 1),
+        BZ0("txwait_2"),
+        # then transmit it
+        STXA(R5, uart_addr+7),
+        J("blast_2"),
     ]
 
     assembled_fw = Instr.assemble(fw)
@@ -66,10 +102,9 @@ class TASHACore(Elaboratable):
         # the boot ROM, which holds the bootloader.
         self.bootrom = Memory(width=16, depth=max_len, init=self.bootrom_data)
 
-        # the UART peripheral. it runs at 2 megabaud so we can stream ultra fast
-        # TASes in without a problem.
-        self.uart = uart.SimpleUART(
-            default_divisor=uart.calculate_divisor(12e6, 2000000))
+        # the UART peripheral. it runs at a fixed 2 megabaud so we can stream
+        # ultra fast TASes in without a problem.
+        self.uart = uart.SysUART(divisor=uart.calculate_divisor(12e6, 2000000))
 
     def elaborate(self, platform):
         m = Module()
