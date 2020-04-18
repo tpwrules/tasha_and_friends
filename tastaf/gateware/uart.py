@@ -4,6 +4,8 @@ from nmigen import *
 from nmigen.lib.cdc import FFSynchronizer
 from boneless.arch.opcode import *
 
+from .setreset import *
+
 # Register Map
 
 # 0x0: (W) Baud Rate / (R) Status
@@ -28,39 +30,6 @@ from boneless.arch.opcode import *
 #    this bizarre arrangement is so that ROLI(v, v, 1) sets S to 1 if
 #    the character is invalid. otherwise, S is 0 and v is the correctly aligned
 #    character.
-
-class SetReset(Elaboratable):
-    def __init__(self, parent, *, priority, initial=False):
-        # if both set and reset are asserted on the same cycle, the value
-        # becomes the prioritized state.
-        if priority not in ("set", "reset"):
-            raise ValueError("Priority must be either 'set' or 'reset', "
-                "not '{}'.".format(priority))
-
-        self.priority = priority
-
-        self.set = Signal()
-        self.reset = Signal()
-        self.value = Signal(reset=initial)
-
-        # avoid the user having to remember to add us
-        parent.submodules += self
-
-    def elaborate(self, platform):
-        m = Module()
-
-        if self.priority == "set":
-            with m.If(self.set):
-                m.d.sync += self.value.eq(1)
-            with m.Elif(self.reset):
-                m.d.sync += self.value.eq(0)
-        elif self.priority == "reset":
-            with m.If(self.reset):
-                m.d.sync += self.value.eq(0)
-            with m.Elif(self.set):
-                m.d.sync += self.value.eq(1)
-
-        return m
 
 def calculate_divisor(freq, baud):
     return int(freq/baud)-1
@@ -98,7 +67,7 @@ class SimpleUART(Elaboratable):
         r2_tx_full = SetReset(m, priority="reset")
         r2_tx_data = Signal(self.char_bits)
 
-        r3_rx_empty = SetReset(m, priority="reset", initial=True)
+        r3_rx_empty = SetReset(m, priority="reset", initial_value=True)
         r3_rx_data = Signal(self.char_bits)
 
         # handle the boneless bus.
