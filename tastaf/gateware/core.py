@@ -49,12 +49,52 @@ def make_bootloader():
         ROLI(R7, R7, 1),
         BS0("tx_wait"), # send it back out if we got one
 
+        # do a CRC test. the string "123456789" should be 0x2189.
+        # reset CRC first
+        STXA(R7, uart_addr+2),
+        MOVI(R0, ord("1")),
+    L("crc_str_tx_loop"),
+        # wait til we have room to transmit
+        LDXA(R4, uart_addr+6),
+        ANDI(R4, R4, 1),
+        BZ0("crc_str_tx_loop"),
+        # then send the current character
+        STXA(R0, uart_addr+6),
+        ADDI(R0, R0, 1),
+        CMPI(R0, ord("9")),
+        BLEU("crc_str_tx_loop"), # there's still another character
+
+        # get CRC back out
+        LDXA(R0, uart_addr+2),
+        # then transmit each of the hex digits
+        MOVI(R1, 4),
+    L("crc_val_tx_loop"),
+        ROLI(R0, R0, 4),
+        ANDI(R6, R0, 0xF),
+        JAL(R7, "hex_out"),
+        SUBI(R1, R1, 1),
+        BNZ("crc_val_tx_loop"),
+
         # clear the timeout flag again (in case sending this took a long time,
         # which it shouldn't have but eh)
         MOVI(R7, 2),
         STXA(R7, uart_addr+1),
         # and wait again
         J("timeout"),
+
+    L("hex_out"),
+        # wait for room
+        LDXA(R4, uart_addr+6),
+        ANDI(R4, R4, 1),
+        BZ0("hex_out"),
+        # get letter
+        LDR(R6, R6, "hex_chars"),
+        # and send it
+        STXA(R6, uart_addr+6),
+        JR(R7, 0),
+
+    L("hex_chars"),
+        list(ord(c) for c in "0123456789ABCDEF")
     ]
 
     assembled_fw = Instr.assemble(fw)

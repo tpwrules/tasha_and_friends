@@ -25,11 +25,12 @@ from .setreset import *
 # 0x2: (R/W) CRC Value / CRC Reset
 #    Read:   15-0: current CRC value
 #   Write:   15-0: write anything to reset CRC to 0
-#   The CRC value is updated with the written or read value after every write or
-#   read of the transmit or receive registers. It uses a bitwise implementation
-#   of the CRC-16/KERMIT algorithm (as defined by crcany). Because it is
-#   bitwise, there are 8 cycles of calculation after the update starts, during
-#   which time the value is invalid.
+#   The CRC value is updated with the written or read value after every valid
+#   write or read of the transmit or receive registers. It uses a bitwise
+#   implementation of the CRC-16/KERMIT algorithm (as defined by crcany).
+#   Because it is bitwise, there are 7 cycles of calculation after the update
+#   starts, during which time the value is invalid and attempting to update it
+#   will corrupt the calculation.
 
 # 0x3: (W) Receive Timeout Timer
 #   Write:   15-0: timeout value
@@ -242,6 +243,48 @@ class Transmitter(Elaboratable):
         return m
 
 
+# handle calculating CRC-16/KERMIT (as defined by anycrc)
+class KermitCRC(Elaboratable):
+    def __init__(self):
+        # reset engine and set CRC to 0
+        self.i_reset = Signal()
+        # start CRC of the given byte. will give the wrong value if engine isn't
+        # done yet!
+        self.i_start = Signal()
+        # the given byte
+        self.i_byte = Signal(8)
+
+        self.o_crc = Signal(16)
+
+    def elaborate(self, platform):
+        m = Module()
+
+        bit_counter = Signal(range(8)) # count from 7 to 0
+
+        with m.If(self.i_reset):
+            m.d.sync += [
+                bit_counter.eq(0),
+                self.o_crc.eq(0),
+            ]
+        with m.Elif(self.i_start):
+            crc_with_byte = Signal(16)
+            m.d.comb += crc_with_byte.eq(self.o_crc ^ self.i_byte)
+            m.d.sync += [
+                bit_counter.eq(7),
+                # do first cycle now
+                self.o_crc.eq(
+                    (crc_with_byte >> 1) ^ Mux(crc_with_byte[0], 0x8408, 0)),
+            ]
+        with m.Elif(bit_counter > 0):
+            m.d.sync += [
+                bit_counter.eq(bit_counter-1),
+                self.o_crc.eq(
+                    (self.o_crc >> 1) ^ Mux(self.o_crc[0], 0x8408, 0)),
+            ]
+
+        return m
+
+
 class SysUART(Elaboratable):
     def __init__(self, divisor, rx_fifo_depth=512): # 512x8 = 1 BRAM
         self.divisor = divisor
@@ -295,6 +338,9 @@ class SysUART(Elaboratable):
             rx_fifo.w_en.eq(rxm.o_we),
         ]
 
+        # hook up the CRC engine
+        m.submodules.crc = crc = KermitCRC()
+
         # run the receive timeout timer
         rt_timeout_val = Signal(16)
         rt_timer_reset = SetReset(m, priority="set")
@@ -337,6 +383,8 @@ class SysUART(Elaboratable):
                         read_data[1].eq(r1_rx_timeout.value),
                         read_data[0].eq(r1_rx_overflow.value),
                     ]
+                with m.Case(2): # CRC value register
+                    m.d.comb += read_data.eq(crc.o_crc)
                 with m.Case(4, 5): # rx status and receive data
                     # the FIFO will be okay if we read from it while empty, so
                     # we just read from it regardless
@@ -353,6 +401,12 @@ class SysUART(Elaboratable):
                             read_data[:7].eq(rx_fifo.r_data[1:]),
                             read_data[14].eq(~rx_fifo.r_rdy),
                         ]
+                    # if there actually was a byte, fold it into the CRC
+                    with m.If(rx_fifo.r_rdy):
+                        m.d.comb += [
+                            crc.i_byte.eq(rx_fifo.r_data),
+                            crc.i_start.eq(1),
+                        ]
                 with m.Case(6, 7): # tx fifo status
                     m.d.comb += read_data[0].eq(r6_tx_full.value)
         with m.Elif(self.i_we):
@@ -366,18 +420,26 @@ class SysUART(Elaboratable):
                     ]
                     with m.If(self.i_wdata[1]):
                         m.d.comb += rt_timer_reset.set.eq(1)
+                with m.Case(2): # CRC reset register
+                    m.d.comb += crc.i_reset.eq(1)
                 with m.Case(3): # receive timeout register
                     m.d.sync += rt_timeout_val.eq(self.i_wdata)
                     m.d.comb += rt_timer_reset.set.eq(1)
                 with m.Case(6, 7): # transmit data register
                     # can be written to low or high byte
-                    value = Mux(self.i_addr[0],
-                        self.i_wdata[8:], self.i_wdata[:8])
+                    value = Signal(8)
+                    m.d.comb += value.eq(Mux(self.i_addr[0],
+                        self.i_wdata[8:], self.i_wdata[:8]))
                     # do we have space available for it?
                     with m.If(~r6_tx_full.value):
                         # yes, store it and set that we've used the space
                         m.d.sync += tx_data.eq(value)
                         m.d.comb += r6_tx_full.set.eq(1)
+                        # and fold it into the CRC
+                        m.d.comb += [
+                            crc.i_byte.eq(value),
+                            crc.i_start.eq(1)
+                        ]
                     with m.Else():
                         # overflowed! drop the write and raise error.
                         m.d.comb += r1_tx_overflow.set.eq(1)
