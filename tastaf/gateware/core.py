@@ -28,9 +28,9 @@ def make_bootloader():
         # clear the timeout flag
         STXA(R7, uart_addr+1),
         # then check if we got any characters
-        LDXA(R7, uart_addr+4),
-        ROLI(R7, R7, 1),
-        BS1("timeout"), # if we didn't, wait some more
+        LDXA(R7, uart_addr+5),
+        ADD(R7, R7, R7),
+        BC1("timeout"), # if we didn't, wait some more
 
         # say that we timed out. since we've been waiting so long for the
         # timeout, the transmit buffer is definitely clear.
@@ -43,11 +43,11 @@ def make_bootloader():
         ANDI(R4, R4, 1),
         BZ0("tx_wait"),
         # then send the character back out
-        STXA(R7, uart_addr+6),
+        STXA(R7, uart_addr+7),
         # try and get another one
-        LDXA(R7, uart_addr+4),
-        ROLI(R7, R7, 1),
-        BS0("tx_wait"), # send it back out if we got one
+        LDXA(R7, uart_addr+5),
+        ADD(R7, R7, R7),
+        BC0("tx_wait"), # send it back out if we got one
 
         # do a CRC test. the string "123456789" should be 0x2189.
         # reset CRC first

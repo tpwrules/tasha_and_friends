@@ -50,12 +50,12 @@ from .setreset import *
 #   except for where the character is placed.
 
 # 0x5: (R) RX FIFO Status and Receive Data (high byte)
-#    Read:   15-8: the read character, if the RX FIFO is not empty
-#           bit 0: 1 if the RX FIFO is empty, 0 otherwise
-#   This arrangement is so that ANDI(x, v, 1) sets Z to 0 if the character is
-#   invalid. Otherwise, Z is 1 and v is the character (and x is trashed either
-#   way). The received character is now in the high 8 bits of the register. The
-#   behavior of this register is identical to the "low byte" version above,
+#    Read: bit 15: 1 if the RX FIFO is empty, 0 otherwise
+#            14-7: the read character, if the RX FIFO is not empty
+#   This bizarre arrangement is so that ADD(v, v, v) sets C to 1 if the
+#   character is invalid. Otherwise, C is 0 and v is the correctly aligned
+#   character. The received character is now in the high 8 bits of the register.
+#   The behavior of this register is identical to the "low byte" version above,
 #   except for where the character is placed.
 
 # 0x6: (R/W) Transmit Data / TX FIFO Status (low byte)
@@ -392,8 +392,8 @@ class SysUART(Elaboratable):
                     # can be read from low or high byte
                     with m.If(self.i_addr[0]): # high byte
                         m.d.comb += [
-                            read_data[8:].eq(rx_fifo.r_data),
-                            read_data[0].eq(~rx_fifo.r_rdy),
+                            read_data[7:15].eq(rx_fifo.r_data),
+                            read_data[15].eq(~rx_fifo.r_rdy),
                         ]
                     with m.Else(): # low byte (rotated for status bit access)
                         m.d.comb += [
