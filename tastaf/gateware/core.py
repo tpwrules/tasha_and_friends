@@ -15,59 +15,46 @@ def make_bootloader():
     delay_ms = 5000
     delay = int((12e6*(delay_ms/1e3))//(4*3))
     fw = [
-    L("main"),
-        # wait for the user to type junk and fill up the FIFO
-        MOVI(R7, (delay>>16)+1),
-        MOVI(R6, delay&0xFFFF),
-    L("wait_1"),
-        SUBI(R6, R6, 1),
-        SBCI(R7, R7, 0),
-        BNZ("wait_1"),
+        # set UART timeout to every second (approx)
+        MOVI(R7, int(12e6/256)),
+        STXA(R7, uart_addr+3),
 
-        MOVI(R5, ord("A")),
-        STXA(R5, uart_addr+6),
+    L("timeout"),
+        # wait for the UART receive timeout
+        LDXA(R7, uart_addr+1),
+        ANDI(R7, R7, 2),
+        BZ1("timeout"), # not timed out
 
-    # blast the FIFO back at them
-    L("blast_1"),
-        # get a character
-        LDXA(R5, uart_addr+4),
-        ROLI(R5, R5, 1),
-        BS1("done_1"), # there wasn't any, we are done here
-        # wait for space to transmit it
-    L("txwait_1"),
+        # clear the timeout flag
+        STXA(R7, uart_addr+1),
+        # then check if we got any characters
+        LDXA(R7, uart_addr+4),
+        ROLI(R7, R7, 1),
+        BS1("timeout"), # if we didn't, wait some more
+
+        # say that we timed out. since we've been waiting so long for the
+        # timeout, the transmit buffer is definitely clear.
+        MOVI(R6, ord("T")),
+        STXA(R6, uart_addr+6),
+
+    L("tx_wait"),
+        # wait til we have room to transmit
         LDXA(R4, uart_addr+6),
         ANDI(R4, R4, 1),
-        BZ0("txwait_1"),
-        # then transmit it
-        STXA(R5, uart_addr+6),
-        J("blast_1"),
-    L("done_1"),
+        BZ0("tx_wait"),
+        # then send the character back out
+        STXA(R7, uart_addr+6),
+        # try and get another one
+        LDXA(R7, uart_addr+4),
+        ROLI(R7, R7, 1),
+        BS0("tx_wait"), # send it back out if we got one
 
-        # wait for the user to type junk and fill up the FIFO
-        MOVI(R7, (delay>>16)+1),
-        MOVI(R6, delay&0xFFFF),
-    L("wait_2"),
-        SUBI(R6, R6, 1),
-        SBCI(R7, R7, 0),
-        BNZ("wait_2"),
-
-    MOVI(R5, ord("B")<<8),
-    STXA(R5, uart_addr+7),
-
-    # blast the FIFO back at them
-    L("blast_2"),
-        # get a character
-        LDXA(R5, uart_addr+5),
-        ANDI(R4, R5, 1),
-        BZ0("main"), # there wasn't any, we are done here
-        # wait for space to transmit it
-    L("txwait_2"),
-        LDXA(R4, uart_addr+7),
-        ANDI(R4, R4, 1),
-        BZ0("txwait_2"),
-        # then transmit it
-        STXA(R5, uart_addr+7),
-        J("blast_2"),
+        # clear the timeout flag again (in case sending this took a long time,
+        # which it shouldn't have but eh)
+        MOVI(R7, 2),
+        STXA(R7, uart_addr+1),
+        # and wait again
+        J("timeout"),
     ]
 
     assembled_fw = Instr.assemble(fw)

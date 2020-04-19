@@ -2,6 +2,7 @@
 # includes: CRC generator, receive timeout timer, receive FIFO, fixed divisor
 
 from nmigen import *
+from nmigen.asserts import Past, Rose, Fell
 from nmigen.lib.cdc import FFSynchronizer
 from nmigen.lib.fifo import SyncFIFOBuffered
 from boneless.arch.opcode import *
@@ -33,9 +34,9 @@ from .setreset import *
 # 0x3: (W) Receive Timeout Timer
 #   Write:   15-0: timeout value
 #   The timeout timer is set to the timeout value when the UART starts receiving
-#   a character, or when the error is reset in the Error register (even if it
-#   wasn't set). It decrements once every 256 cycles. Once it hits zero, the bit
-#   in the Error register is set.
+#   a character, this register is written, or when the error is reset in the
+#   Error register (even if it wasn't set). It decrements once every 256 cycles.
+#   Once it hits zero, the timeout bit in the Error register is set.
 
 # 0x4: (R) RX FIFO Status and Receive Data (low byte)
 #    Read: bit 15: bit 0 of read character, if the RX FIFO is not empty
@@ -294,6 +295,28 @@ class SysUART(Elaboratable):
             rx_fifo.w_en.eq(rxm.o_we),
         ]
 
+        # run the receive timeout timer
+        rt_timeout_val = Signal(16)
+        rt_timer_reset = SetReset(m, priority="set")
+        rt_timer_curr = Signal(16)
+        rt_subtimer = Signal(9)
+
+        # keep reset if reception is ongoing
+        with m.If(rxm.o_active):
+            m.d.comb += rt_timer_reset.set.eq(1)
+
+        # cancel reset request once it's been done
+        m.d.sync += rt_timer_reset.reset.eq(rt_timer_reset.value)
+
+        m.d.sync += rt_subtimer.eq(rt_subtimer-1)
+        with m.If(rt_timer_reset.value):
+            m.d.sync += rt_timer_curr.eq(rt_timeout_val)
+        with m.Elif(rt_timer_curr > 0):
+            with m.If(rt_subtimer[-1] != Past(rt_subtimer)[-1]): # rolled over?
+                m.d.sync += rt_timer_curr.eq(rt_timer_curr-1)
+                # timeout about to hit zero?
+                m.d.comb += r1_rx_timeout.set.eq(rt_timer_curr == 1)
+
         # handle the boneless bus.
         read_data = Signal(16) # it expects one cycle of read latency
         m.d.sync += self.o_rdata.eq(read_data)
@@ -341,6 +364,11 @@ class SysUART(Elaboratable):
                         r1_rx_timeout.reset.eq(self.i_wdata[1]),
                         r1_rx_overflow.reset.eq(self.i_wdata[0]),
                     ]
+                    with m.If(self.i_wdata[1]):
+                        m.d.comb += rt_timer_reset.set.eq(1)
+                with m.Case(3): # receive timeout register
+                    m.d.sync += rt_timeout_val.eq(self.i_wdata)
+                    m.d.comb += rt_timer_reset.set.eq(1)
                 with m.Case(6, 7): # transmit data register
                     # can be written to low or high byte
                     value = Mux(self.i_addr[0],
