@@ -8,64 +8,64 @@ from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
 
 from . import uart
+from .periph_map import p_map
 
 # generate a really simple test for now
 def make_bootloader():
-    uart_addr = 0
     delay_ms = 5000
     delay = int((12e6*(delay_ms/1e3))//(4*3))
     fw = [
         # set UART timeout to every second (approx)
         MOVI(R7, int(12e6/256)),
-        STXA(R7, uart_addr+3),
+        STXA(R7, p_map.uart.w_rt_timer),
 
     L("timeout"),
         # wait for the UART receive timeout
-        LDXA(R7, uart_addr+1),
+        LDXA(R7, p_map.uart.r_error),
         ANDI(R7, R7, 2),
         BZ1("timeout"), # not timed out
 
         # clear the timeout flag
-        STXA(R7, uart_addr+1),
+        STXA(R7, p_map.uart.w_error_clear),
         # then check if we got any characters
-        LDXA(R7, uart_addr+5),
+        LDXA(R7, p_map.uart.r_rx_hi),
         ADD(R7, R7, R7),
         BC1("timeout"), # if we didn't, wait some more
 
         # say that we timed out. since we've been waiting so long for the
         # timeout, the transmit buffer is definitely clear.
         MOVI(R6, ord("T")),
-        STXA(R6, uart_addr+6),
+        STXA(R6, p_map.uart.w_tx_lo),
 
     L("tx_wait"),
         # wait til we have room to transmit
-        LDXA(R4, uart_addr+6),
+        LDXA(R4, p_map.uart.r_tx_status),
         ANDI(R4, R4, 1),
         BZ0("tx_wait"),
         # then send the character back out
-        STXA(R7, uart_addr+7),
+        STXA(R7, p_map.uart.w_tx_hi),
         # try and get another one
-        LDXA(R7, uart_addr+5),
+        LDXA(R7, p_map.uart.r_rx_hi),
         ADD(R7, R7, R7),
         BC0("tx_wait"), # send it back out if we got one
 
         # do a CRC test. the string "123456789" should be 0x2189.
         # reset CRC first
-        STXA(R7, uart_addr+2),
+        STXA(R7, p_map.uart.w_crc_reset),
         MOVI(R0, ord("1")),
     L("crc_str_tx_loop"),
         # wait til we have room to transmit
-        LDXA(R4, uart_addr+6),
+        LDXA(R4, p_map.uart.r_tx_status),
         ANDI(R4, R4, 1),
         BZ0("crc_str_tx_loop"),
         # then send the current character
-        STXA(R0, uart_addr+6),
+        STXA(R0, p_map.uart.w_tx_lo),
         ADDI(R0, R0, 1),
         CMPI(R0, ord("9")),
         BLEU("crc_str_tx_loop"), # there's still another character
 
         # get CRC back out
-        LDXA(R0, uart_addr+2),
+        LDXA(R0, p_map.uart.r_crc_value),
         # then transmit each of the hex digits
         MOVI(R1, 4),
     L("crc_val_tx_loop"),
@@ -78,19 +78,19 @@ def make_bootloader():
         # clear the timeout flag again (in case sending this took a long time,
         # which it shouldn't have but eh)
         MOVI(R7, 2),
-        STXA(R7, uart_addr+1),
+        STXA(R7, p_map.uart.w_error_clear),
         # and wait again
         J("timeout"),
 
     L("hex_out"),
         # wait for room
-        LDXA(R4, uart_addr+6),
+        LDXA(R4, p_map.uart.r_tx_status),
         ANDI(R4, R4, 1),
         BZ0("hex_out"),
         # get letter
         LDR(R6, R6, "hex_chars"),
         # and send it
-        STXA(R6, uart_addr+6),
+        STXA(R6, p_map.uart.w_tx_lo),
         JR(R7, 0),
 
     L("hex_chars"),
@@ -224,13 +224,12 @@ class TASHACore(Elaboratable):
         m.d.comb += cpu_core.i_ext_data.eq(result_expr)
 
         # hook up UART as peripheral zero
-        uart_periph_num = 0
         m.d.comb += [
-            uart.i_re.eq(periph_re[uart_periph_num]),
-            uart.i_we.eq(periph_we[uart_periph_num]),
+            uart.i_re.eq(periph_re[p_map.uart.periph_num]),
+            uart.i_we.eq(periph_we[p_map.uart.periph_num]),
             uart.i_addr.eq(periph_addr),
             uart.i_wdata.eq(periph_wdata),
-            periph_rdata[uart_periph_num].eq(uart.o_rdata),
+            periph_rdata[p_map.uart.periph_num].eq(uart.o_rdata),
 
             uart.i_rx.eq(self.uart_signals.i_rx),
             self.uart_signals.o_tx.eq(uart.o_tx),
