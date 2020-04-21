@@ -85,6 +85,14 @@ class TASHAShell(Elaboratable):
         uart_signals = copy_signals(self._in_uart_signals)
         memory_signals = copy_signals(self._in_memory_signals)
 
+        # now we can give all the signals to the core
+        core = TASHACore(
+            snes_signals=snes_signals,
+            uart_signals=uart_signals,
+            memory_signals=memory_signals,
+        )
+        m.submodules += core
+
         # wire up the clocks to the actual clock domains. we do it here because
         # the different platforms have different ways of giving us clocks
         sync_domain = ClockDomain("sync")
@@ -94,17 +102,14 @@ class TASHAShell(Elaboratable):
             ClockSignal("sync").eq(clock_signals.i_sys_clk_12),
             ClockSignal("apu").eq(clock_signals.i_apu_clk_24p75),
         ]
-        # hook up reset signals too. we use the ResetSychronizer to synchronize
-        # the asynchronous reset to each clock domain
-        m.submodules += ResetSynchronizer(clock_signals.i_reset, domain="sync")
-        m.submodules += ResetSynchronizer(clock_signals.i_reset, domain="apu")
-
-        # now we can give all the signals to the core
-        core = TASHACore(
-            snes_signals=snes_signals,
-            uart_signals=uart_signals,
-            memory_signals=memory_signals,
-        )
-        m.submodules += core
+        # hook up reset signals too. the system can request its own reset, so we
+        # have to incorporate that here.
+        do_reset = Signal()
+        m.d.comb += do_reset.eq(clock_signals.i_reset | core.o_reset_req)
+        # synchronize the various resets to the clock domains. we use a lot of
+        # stages to ensure that nothing weird happens when the system tries to
+        # reset itself
+        m.submodules += ResetSynchronizer(do_reset, domain="sync", stages=4)
+        m.submodules += ResetSynchronizer(do_reset, domain="apu", stages=4)
 
         return m

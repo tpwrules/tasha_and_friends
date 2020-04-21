@@ -7,7 +7,7 @@ from boneless.gateware import ALSRU_4LUT, CoreFSM
 from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
 
-from . import uart
+from . import reset_req, uart
 from .periph_map import p_map
 
 # generate a really simple test for now
@@ -18,6 +18,9 @@ def make_bootloader():
         # set UART timeout to every second (approx)
         MOVI(R7, int(12e6/256)),
         STXA(R7, p_map.uart.w_rt_timer),
+
+        MOVI(R6, ord("H")), # we've come out of reset
+        STXA(R6, p_map.uart.w_tx_lo),
 
     L("timeout"),
         # wait for the UART receive timeout
@@ -31,6 +34,9 @@ def make_bootloader():
         LDXA(R7, p_map.uart.r_rx_hi),
         ADD(R7, R7, R7),
         BC1("timeout"), # if we didn't, wait some more
+
+        CMPI(R7, ord("r")<<8),
+        BEQ("test_reset"),
 
         # say that we timed out. since we've been waiting so long for the
         # timeout, the transmit buffer is definitely clear.
@@ -93,6 +99,13 @@ def make_bootloader():
         STXA(R6, p_map.uart.w_tx_lo),
         JR(R7, 0),
 
+    L("test_reset"),
+        MOVI(R0, 0xFADE),
+        MOVI(R1, 0xDEAD),
+        STXA(R0, p_map.reset_req.w_enable_key_fade),
+        STXA(R1, p_map.reset_req.w_perform_key_dead),
+        J(-1),
+
     L("hex_chars"),
         list(ord(c) for c in "0123456789ABCDEF")
     ]
@@ -106,6 +119,8 @@ class TASHACore(Elaboratable):
         self.snes_signals = snes_signals
         self.uart_signals = uart_signals
         self.memory_signals = memory_signals
+
+        self.o_reset_req = Signal() # request a full system reset, active high
 
         # compile the bootloader first. we have a bootloader so a) the code can
         # be updated without having to reconfigure the FPGA and b) because the
@@ -129,6 +144,10 @@ class TASHACore(Elaboratable):
         # the boot ROM, which holds the bootloader.
         self.bootrom = Memory(width=16, depth=max_len, init=self.bootrom_data)
 
+        # the reset request peripheral. this lets us get the system into a clean
+        # state from a remote command or similar
+        self.reset_req = reset_req.ResetReq()
+
         # the UART peripheral. it runs at a fixed 2 megabaud so we can stream
         # ultra fast TASes in without a problem.
         self.uart = uart.SysUART(divisor=uart.calculate_divisor(12e6, 2000000))
@@ -140,6 +159,7 @@ class TASHACore(Elaboratable):
             transparent=False)
         m.submodules.bootrom_w = bootrom_w = self.bootrom.write_port()
 
+        m.submodules.reset_req = reset_req = self.reset_req
         m.submodules.uart = uart = self.uart
 
         # hook up main bus. the main RAM gets the first half and the boot ROM
@@ -193,7 +213,7 @@ class TASHACore(Elaboratable):
         # regions can be addressed with the 1-word form of the external bus
         # instructions. each peripheral gets 1 read and 1 write enable bit, 4
         # address bits, 16 write data bits, and gives back 16 read data bits
-        NUM_PERIPHS = 1
+        NUM_PERIPHS = 2
         periph_en = tuple(Signal(1) for _ in range(NUM_PERIPHS))
         periph_re = tuple(Signal(1) for _ in range(NUM_PERIPHS))
         periph_we = tuple(Signal(1) for _ in range(NUM_PERIPHS))
@@ -223,7 +243,18 @@ class TASHACore(Elaboratable):
                 Mux(Past(periph_en[pi]), periph_rdata[pi], 0)
         m.d.comb += cpu_core.i_ext_data.eq(result_expr)
 
-        # hook up UART as peripheral zero
+        # hook up the reset request peripheral
+        m.d.comb += [
+            reset_req.i_re.eq(periph_re[p_map.reset_req.periph_num]),
+            reset_req.i_we.eq(periph_we[p_map.reset_req.periph_num]),
+            reset_req.i_addr.eq(periph_addr),
+            reset_req.i_wdata.eq(periph_wdata),
+            periph_rdata[p_map.reset_req.periph_num].eq(reset_req.o_rdata),
+
+            self.o_reset_req.eq(reset_req.o_reset_req),
+        ]
+
+        # hook up the UART
         m.d.comb += [
             uart.i_re.eq(periph_re[p_map.uart.periph_num]),
             uart.i_we.eq(periph_we[p_map.uart.periph_num]),

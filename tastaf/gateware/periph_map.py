@@ -21,7 +21,18 @@ def _reg_addr(periph_num, **kwargs):
 
     return {name: num+base for name, num in kwargs.items()}
 
-_uart_periph_num = 0
+_reset_req_periph_num = 0
+_reset_req = _namedtupleton("reset_req",
+    periph_num=_reset_req_periph_num,
+
+    **_reg_addr(_reset_req_periph_num,
+        # these must match reset_req.py!!!!!!
+        w_enable_key_fade=0,
+        w_perform_key_dead=1,
+    )
+)
+
+_uart_periph_num = 1
 _uart = _namedtupleton("uart",
     periph_num=_uart_periph_num,
 
@@ -42,5 +53,6 @@ _uart = _namedtupleton("uart",
 )
 
 p_map = _namedtupleton("p_map",
+    reset_req=_reset_req,
     uart=_uart,
 )
