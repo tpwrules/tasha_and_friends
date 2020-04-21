@@ -9,110 +9,7 @@ from boneless.arch.opcode import *
 
 from . import reset_req, uart
 from .periph_map import p_map
-
-# generate a really simple test for now
-def make_bootloader():
-    delay_ms = 5000
-    delay = int((12e6*(delay_ms/1e3))//(4*3))
-    fw = [
-        # set UART timeout to every second (approx)
-        MOVI(R7, int(12e6/256)),
-        STXA(R7, p_map.uart.w_rt_timer),
-
-        MOVI(R6, ord("H")), # we've come out of reset
-        STXA(R6, p_map.uart.w_tx_lo),
-
-    L("timeout"),
-        # wait for the UART receive timeout
-        LDXA(R7, p_map.uart.r_error),
-        ANDI(R7, R7, 2),
-        BZ1("timeout"), # not timed out
-
-        # clear the timeout flag
-        STXA(R7, p_map.uart.w_error_clear),
-        # then check if we got any characters
-        LDXA(R7, p_map.uart.r_rx_hi),
-        ADD(R7, R7, R7),
-        BC1("timeout"), # if we didn't, wait some more
-
-        CMPI(R7, ord("r")<<8),
-        BEQ("test_reset"),
-
-        # say that we timed out. since we've been waiting so long for the
-        # timeout, the transmit buffer is definitely clear.
-        MOVI(R6, ord("T")),
-        STXA(R6, p_map.uart.w_tx_lo),
-
-    L("tx_wait"),
-        # wait til we have room to transmit
-        LDXA(R4, p_map.uart.r_tx_status),
-        ANDI(R4, R4, 1),
-        BZ0("tx_wait"),
-        # then send the character back out
-        STXA(R7, p_map.uart.w_tx_hi),
-        # try and get another one
-        LDXA(R7, p_map.uart.r_rx_hi),
-        ADD(R7, R7, R7),
-        BC0("tx_wait"), # send it back out if we got one
-
-        # do a CRC test. the string "123456789" should be 0x2189.
-        # reset CRC first
-        STXA(R7, p_map.uart.w_crc_reset),
-        MOVI(R0, ord("1")),
-    L("crc_str_tx_loop"),
-        # wait til we have room to transmit
-        LDXA(R4, p_map.uart.r_tx_status),
-        ANDI(R4, R4, 1),
-        BZ0("crc_str_tx_loop"),
-        # then send the current character
-        STXA(R0, p_map.uart.w_tx_lo),
-        ADDI(R0, R0, 1),
-        CMPI(R0, ord("9")),
-        BLEU("crc_str_tx_loop"), # there's still another character
-
-        # get CRC back out
-        LDXA(R0, p_map.uart.r_crc_value),
-        # then transmit each of the hex digits
-        MOVI(R1, 4),
-    L("crc_val_tx_loop"),
-        ROLI(R0, R0, 4),
-        ANDI(R6, R0, 0xF),
-        JAL(R7, "hex_out"),
-        SUBI(R1, R1, 1),
-        BNZ("crc_val_tx_loop"),
-
-        # clear the timeout flag again (in case sending this took a long time,
-        # which it shouldn't have but eh)
-        MOVI(R7, 2),
-        STXA(R7, p_map.uart.w_error_clear),
-        # and wait again
-        J("timeout"),
-
-    L("hex_out"),
-        # wait for room
-        LDXA(R4, p_map.uart.r_tx_status),
-        ANDI(R4, R4, 1),
-        BZ0("hex_out"),
-        # get letter
-        LDR(R6, R6, "hex_chars"),
-        # and send it
-        STXA(R6, p_map.uart.w_tx_lo),
-        JR(R7, 0),
-
-    L("test_reset"),
-        MOVI(R0, 0xFADE),
-        MOVI(R1, 0xDEAD),
-        STXA(R0, p_map.reset_req.w_enable_key_fade),
-        STXA(R1, p_map.reset_req.w_perform_key_dead),
-        J(-1),
-
-    L("hex_chars"),
-        list(ord(c) for c in "0123456789ABCDEF")
-    ]
-
-    assembled_fw = Instr.assemble(fw)
-
-    return assembled_fw, len(assembled_fw)
+from ..firmware.bootloader_fw import make_bootloader
 
 class TASHACore(Elaboratable):
     def __init__(self, snes_signals, uart_signals, memory_signals):
@@ -130,7 +27,7 @@ class TASHACore(Elaboratable):
         # mostly a nice debugging feature so that a rogue program can't trash
         # the rom and require the fpga to be reconfigured. the whole thing can't
         # be ROM because the CPU registers need to exist in it too.
-        self.bootrom_data, self.bootrom_rolen = make_bootloader()
+        self.bootrom_data, self.bootrom_rolen = make_bootloader([0]*7)
         self.bootrom_len = len(self.bootrom_data)
         max_len = 256
         if self.bootrom_len > max_len:
