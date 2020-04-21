@@ -23,23 +23,16 @@ class TASHACore(Elaboratable):
         # be updated without having to reconfigure the FPGA and b) because the
         # main RAM can't always be loaded from configuration anyway.
 
-        # the "rolen" is how much of the bootrom should be read only. it's
-        # mostly a nice debugging feature so that a rogue program can't trash
-        # the rom and require the fpga to be reconfigured. the whole thing can't
-        # be ROM because the CPU registers need to exist in it too.
-        self.bootrom_data, self.bootrom_rolen = make_bootloader([0]*7)
-        self.bootrom_len = len(self.bootrom_data)
-        max_len = 256
-        if self.bootrom_len > max_len:
-            raise ValueError(
-                "bootrom length {} is over max of {} by {} words".format(
-                    self.bootrom_len, max_len, self.bootrom_len-max_len))
+        # we can store seven info words that the PC bootload script will read
+        # and give to the PC application. eventually we may do some sort of
+        # capability list, but for now it's empty. 
+        self.bootrom_data = make_bootloader([0]*7)
 
         # the main CPU. configured to start in the boot ROM.
         self.cpu_core = CoreFSM(alsru_cls=ALSRU_4LUT,
             reset_pc=0xFF00, reset_w=0xFFF8)
-        # the boot ROM, which holds the bootloader.
-        self.bootrom = Memory(width=16, depth=max_len, init=self.bootrom_data)
+        # the boot ROM, which holds the bootloader (and its RAM).
+        self.bootrom = Memory(width=16, depth=256, init=self.bootrom_data)
 
         # the reset request peripheral. this lets us get the system into a clean
         # state from a remote command or similar
@@ -63,14 +56,14 @@ class TASHACore(Elaboratable):
         # gets the second (though nominally, it's from 0xFF00 to 0xFFFF)
         mainram_en = Signal()
         bootrom_en = Signal()
-        # the area of the boot ROM with code can't be written to to avoid
-        # destroying it by accident
+        # the code area of the boot ROM can't be written to to avoid destroying
+        # it by accident. if it got destroyed, then the bootloader wouldn't work
+        # after reset; a full reconfiguration would be required.
         bootrom_writable = Signal()
         m.d.comb += [
             mainram_en.eq(cpu_core.o_bus_addr[-1] == 0),
             bootrom_en.eq(cpu_core.o_bus_addr[-1] == 1),
-            bootrom_writable.eq(
-                (cpu_core.o_bus_addr & 0xFF) >= self.bootrom_rolen)
+            bootrom_writable.eq((cpu_core.o_bus_addr & 0xC0) == 0xC0)
         ]
         # wire the main bus to the memories
         m.d.comb += [
