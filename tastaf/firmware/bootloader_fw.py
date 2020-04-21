@@ -102,7 +102,173 @@ BOOTLOADER_VERSION = 1
 # 0xE0-FF | 32   | (RW) Register windows
 
 FW_MAX_LENGTH = 184
+PACKET_MAX_LENGTH = 32
 RAM_PACKET_BUFFER = 0xFFC0
+
+# receive a packet
+# on entry (in caller window):
+# R7: return address
+# on exit (in our window):
+# R2: command number
+# R1: command length
+# R0: issue: 0 = ok, 1 = bad length, 2 = bad CRC, 3 = timeout,
+#            4 = timeout of command word
+def _bfw_rx_packet():
+    # generate random prefix so that we effectively can make local labels
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager(
+        "R7:lr R6:buf_pos R5:buf_end R4:got_temp "
+        "R3:got_word R2:command R1:length R0:issue")
+    fw = [
+        # create register frame
+        ADJW(-8),
+        # clear the timeout flag in case it's been too long since receiving the
+        # last packet
+        MOVI(r.got_temp, 2),
+        STXA(r.got_temp, p_map.uart.w_error_clear),
+        # reset the UART CRC engine before we start reading out the packet
+        STXA(r.got_temp, p_map.uart.w_crc_reset), # what we write doesn't matter
+
+        # secretly the command word is two bytes!
+        # issue 4 is timing out while receiving the command word. we treat that
+        # separately because we don't send timeout errors on the assumption that
+        # the host just didn't send anything
+        MOVI(r.issue, 4),
+        JAL(r.lr, lp+"rx_word"),
+        # length is the low byte
+        ANDI(r.length, r.got_word, 0x00FF),
+        # and the command is the high byte
+        SRLI(r.command, r.got_word, 8),
+
+        # make sure we have the buffer space to accept the packet
+        MOVI(r.issue, 1), # that would be issue type 1
+        CMPI(r.length, PACKET_MAX_LENGTH),
+        BGTU(lp+"ret"), # it's too long! abort
+
+        # now we can start receiving the words
+        MOVI(r.issue, 3), # with real timeout errors
+        MOVI(r.buf_pos, RAM_PACKET_BUFFER),
+        ADD(r.buf_end, r.buf_pos, r.length),
+    L(lp+"rx_words"),
+        JAL(r.lr, lp+"rx_word"),
+        ST(r.got_word, r.buf_pos, 0),
+        ADDI(r.buf_pos, r.buf_pos, 1),
+        CMP(r.buf_pos, r.buf_end),
+        BNE(lp+"rx_words"),
+    ]
+    r -= "buf_pos buf_end"
+    r += "R6:calc_crc"
+    fw.append([
+        # finally, there is the CRC word. we have to read the CRC result from
+        # the UART before we receive the word, otherwise the CRC result will
+        # include the CRC word which doesn't make any sense
+        LDXA(r.calc_crc, p_map.uart.r_crc_value),
+        JAL(r.lr, lp+"rx_word"),
+        # assume there is no issue with the CRC
+        MOVI(r.issue, 0),
+        # if they match, that's true
+        CMP(r.calc_crc, r.got_word),
+        BEQ(lp+"ret"),
+        # but if they don't, that's a problem
+        MOVI(r.issue, 2),
+    L(lp+"ret"),
+        ADJW(8),
+        JR(R7, 0), # R7 in caller's window
+    ])
+
+    fw.append([
+    L(lp+"rx_word"),
+        # check for timeouts
+        LDXA(r.got_word, p_map.uart.r_error),
+        ANDI(r.got_word, r.got_word, 2),
+        BZ0(lp+"ret"), # issue already set up by caller
+        # check for a character
+        LDXA(r.got_word, p_map.uart.r_rx_lo),
+        ROLI(r.got_word, r.got_word, 1),
+        BS1(lp+"rx_word"),
+        # get the other character
+    L(lp+"rx_word_cont"),
+        # check for timeouts
+        LDXA(r.got_temp, p_map.uart.r_error),
+        ANDI(r.got_temp, r.got_temp, 2),
+        BZ0(lp+"ret"), # issue already set up by caller
+        # check for a character
+        LDXA(r.got_temp, p_map.uart.r_rx_hi),
+        ADD(r.got_temp, r.got_temp, r.got_temp),
+        BC1(lp+"rx_word_cont"),
+        # put characters together
+        OR(r.got_word, r.got_word, r.got_temp),
+        # and we are done
+        JR(r.lr, 0),
+    ])
+
+    return fw
+
+# transmit a packet
+# on entry (in caller window):
+# R7: return address
+# R5: result word
+# on exit (in our window):
+# nothing of interest
+def _bfw_tx_packet():
+    # generate random prefix so that we effectively can make local labels
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager(
+        "R7:lr R6:fp R5:buf_pos R4:buf_end R3:send_word "
+        "R2:send_temp R0:length")
+    fw = [
+        # create register frame
+        LDW(r.fp, -8),
+        # reset the UART CRC engine before we start sending out the packet
+        STXA(r.fp, p_map.uart.w_crc_reset), # what we write doesn't matter
+
+        # get the result word from our caller
+        LD(r.send_word, r.fp, 5),
+        # save the length
+        ANDI(r.length, r.send_word, 0x00FF),
+        # send out the word to start the packet
+        JR(r.lr, lp+"tx_word"),
+
+        CMPI(r.length, 0), # don't try to send any words if there aren't any
+        BEQ(lp+"words_done"),
+
+        MOVI(r.buf_pos, RAM_PACKET_BUFFER),
+        ADD(r.buf_end, r.buf_pos, r.length),
+    L(lp+"tx_words"),
+        LD(r.send_word, r.buf_pos, 0),
+        JAL(r.lr, lp+"tx_word"),
+        ADDI(r.buf_pos, r.buf_pos, 1),
+        CMP(r.buf_pos, r.buf_end),
+        BNE(lp+"tx_words"),
+
+    L(lp+"words_done"),
+        # get the CRC of everything we've sent so far and send it too
+        LDXA(r.send_word, p_map.uart.r_crc_value),
+        JAL(r.lr, lp+"tx_word"),
+
+        ADJW(8),
+        JR(R7, 0), # R7 in caller's window
+
+    L(lp+"tx_word"),
+        # wait for space
+        LDXA(r.send_temp, p_map.uart.r_tx_status),
+        ANDI(r.send_temp, r.send_temp, 1),
+        BZ0(lp+"tx_word"),
+        # send the low character
+        STXA(r.send_word, p_map.uart.w_tx_lo),
+    L(lp+"tx_word_cont"),
+        # wait for more space
+        LDXA(r.send_temp, p_map.uart.r_tx_status),
+        ANDI(r.send_temp, r.send_temp, 1),
+        BZ0(lp+"tx_word_cont"),
+        # then send the high character
+        STXA(r.send_word, p_map.uart.w_tx_hi),
+        # and we are done
+        JR(r.lr, 0),
+    ]
+
+    return fw
+
 
 def make_bootloader(info_words):
 
@@ -115,25 +281,144 @@ def make_bootloader(info_words):
 
 
     fw = [
-        MOVR(R0, "hi"),
-    L("tx_wait"),
-        LDXA(R1, p_map.uart.r_tx_status),
-        ANDI(R1, R1, 1),
-        BZ0("tx_wait"),
+    L("reset"),
+        # start from reset. we are always going to start from reset, so we don't
+        # have to worry about e.g. changing peripherals back to default modes.
 
-        LD(R1, R0, 0),
-        CMPI(R1, 0),
-        BEQ("done"),
-        STXA(R1, p_map.uart.w_tx_lo),
-        ADDI(R0, R0, 1),
-        J("tx_wait"),
-
-    L("done"),
-        J("done"),
-
-    L("hi"),
-        list(ord(c) for c in "Hello, world!"),
+        # set UART receive timeout to about 500ms
+        MOVI(R0, int((12e6*.5)/256)),
+        STXA(R0, p_map.uart.w_rt_timer),
     ]
+    r = RegisterManager(
+        "R7:lr R6:fp R5:result_word R3:buf_ptr R2:command R1:length R0:issue")
+    fw.append([
+    L("main_loop"),
+        # receive a packet
+        JAL(r.lr, "rx_packet"),
+        LDW(r.fp, 0), # fetch window so we can get the return values
+
+        LD(r.issue, r.fp, -8+0),
+        # if the issue was 4, it was a timeout when receiveing the command word.
+        # we ignore these because they will happen regularly as long as the
+        # other side isn't sending commands and so aren't an error.
+        CMPI(r.issue, 4),
+        BEQ("main_loop"),
+
+        # load LR with the main loop so that subfunctions can just jump to the
+        # tx packet routine and have it return to be ready for another packet
+        MOVR(r.lr, "main_loop"),
+        # and load the pointer to the buffer so the subfunctions can easily
+        # access it
+        MOVI(r.buf_ptr, RAM_PACKET_BUFFER),
+
+        # if there was any other issue, we need to send it back out
+        CMPI(r.issue, 0),
+        BNE("sys_packet_tx_issue"),
+
+        LD(r.length, r.fp, -8+1),
+        LD(r.command, r.fp, -8+2),
+        # figure out what command it is. ideally we would use a switch table but
+        # we can't declare them yet
+        SUBI(r.command, r.command, 1), # command 1
+        BEQ("sys_cmd_hello"),
+        SUBI(r.command, r.command, 1), # command 2
+        BEQ("sys_cmd_write_data"),
+        SUBI(r.command, r.command, 1), # command 3
+        BEQ("sys_cmd_jump_to_code"),
+        SUBI(r.command, r.command, 1), # command 4
+        BEQ("sys_cmd_read_data"),
+        # oh no we don't know what it is. fortunately, issue 0 "received ok" is
+        # also "bad command"
+        J("sys_packet_tx_issue"),
+    ])
+    r -= "fp command"
+    fw.append([
+    L("sys_packet_tx_invalid_length"),
+        MOVI(r.issue, 1),
+        # fall through to tx issue packet
+    L("sys_packet_tx_issue"), # send error packet with the given issue
+        # store the issue into the packet
+        ST(r.issue, r.buf_ptr, 0),
+        # result code 2 with length 1
+        MOVI(r.result_word, 0x0201),
+        J("tx_packet"), # LR is set to return to main loop
+    L("sys_packet_tx_success"), # say everything wnet great
+        # result code 1 with length 0
+        MOVI(r.result_word, 0x0100),
+        J("tx_packet"), # LR is set to return to main loop
+    ])
+    fw.append([
+    L("sys_cmd_hello"),
+        # technically there shouldn't be any parameters
+        CMPI(r.length, 0),
+        BNE("sys_packet_tx_invalid_length"),
+        # if we're good, say hi back
+        J("sys_packet_tx_success"),
+    ])
+    r += "R6:dest_addr R4:buf_end R2:temp"
+    fw.append([
+    L("sys_cmd_write_data"), # write some data to some address
+        # we need at least the address and one word
+        CMPI(r.length, 2),
+        BLTU("sys_packet_tx_invalid_length"),
+        LD(r.dest_addr, r.buf_ptr, 0),
+        ADD(r.buf_end, r.buf_ptr, r.length),
+        ADDI(r.buf_ptr, r.buf_ptr, 1),
+    L("_scwd_copy"),
+        LD(r.temp, r.buf_ptr, 0),
+        ST(r.temp, r.dest_addr, 0),
+        ADDI(r.buf_ptr, r.buf_ptr, 1),
+        ADDI(r.dest_addr, r.dest_addr, 1),
+        CMP(r.buf_ptr, r.buf_end),
+        BNE("_scwd_copy"),
+        J("sys_packet_tx_success"),
+    ])
+    r -= "dest_addr buf_end temp"
+    r += "R6:code_addr"
+    fw.append([
+    L("sys_cmd_jump_to_code"), # jump to some address
+        CMPI(r.length, 1),
+        BNE("sys_packet_tx_invalid_length"),
+        LD(r.code_addr, r.buf_ptr, 0),
+        # tell the host that we successfully got everything before we give up
+        # control
+        MOVI(r.result_word, 0x0100),
+        JAL(r.lr, "tx_packet"),
+        # now we can start running the new program
+        JR(r.code_addr, 0),
+    ])
+    r -= "code_addr"
+    r += "R6:src_addr R4:buf_end R2:temp"
+    fw.append([
+    L("sys_cmd_read_data"), # read some data from some address
+        CMPI(r.length, 2),
+        BNE("sys_packet_tx_invalid_length"),
+        LD(r.src_addr, r.buf_ptr, 0),
+        LD(r.length, r.buf_ptr, 1),
+        # we return the requested number of words as result type 3
+        ORI(r.result_word, r.length, 3<<8),
+        # make sure we won't overrun our buffer
+        CMPI(r.length, PACKET_MAX_LENGTH),
+        BGTU("sys_packet_tx_invalid_length"),
+        ADD(r.buf_end, r.buf_ptr, r.length),
+    L("_scrd_copy"),
+        LD(r.temp, r.src_addr, 0),
+        ST(r.temp, r.buf_ptr, 0),
+        ADDI(r.src_addr, r.src_addr, 1),
+        ADDI(r.buf_ptr, r.buf_ptr, 1),
+        CMP(r.buf_ptr, r.buf_end),
+        BLTU("_scrd_copy"), # ensure we exit even if we're copying 0 words
+        # we set the result word before the loop
+        J("tx_packet"),
+    ])
+
+    # include all the functions
+    fw.append([
+    L("tx_packet"),
+        _bfw_tx_packet(),
+    L("rx_packet"),
+        _bfw_rx_packet(),
+    ])
 
     # assemble just the code region
     assembled_fw = Instr.assemble(fw)
