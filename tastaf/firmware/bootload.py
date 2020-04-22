@@ -127,8 +127,7 @@ class Bootloader:
             end = min(start+PACKET_MAX_LENGTH, length)
             resp_code, resp_data = self._command(4, [curr_addr, end-start])
             if resp_code != 3:
-                raise BootloadError("unexpected response {}".format(
-                        resp_code))
+                raise BootloadError("unexpected response {}".format(resp_code))
             all_data.extend(resp_data)
 
         return all_data
@@ -140,8 +139,18 @@ class Bootloader:
             resp_code, resp_data = self._command(2,
                 [addr+start, *data[start:start+PACKET_MAX_LENGTH-1]])
             if resp_code != 1:
-                raise BootloadError("unexpected response {}".format(
-                        resp_code))
+                raise BootloadError("unexpected response {}".format(resp_code))
+
+    # start program execution at "addr". if it succeeds, it closes the
+    # connection. if it fails, it raises an exception.
+    def start_execution(self, addr):
+        resp_code, resp_data = self._command(3, [addr])
+        if resp_code != 1:
+            raise BootloadError("unexpected response {}".format(resp_code))
+
+        port = self.port
+        self.port = None
+        port.close()
 
 def do_bootload(port, program):
     print("Connecting...")
@@ -170,5 +179,8 @@ def do_bootload(port, program):
     read_program = bootloader.read_memory(0, len(program))
     if program != read_program:
         raise BootloadError("verification failure")
+
+    print("Starting execution...")
+    bootloader.start_execution(0)
 
     print("Success!")

@@ -22,16 +22,13 @@ L("tx_wait"),
 
     LD(R1, R0, 0),
     CMPI(R1, 0),
-    BEQ("done"),
+    BEQ("rx_wait"),
     STXA(R1, p_map.uart.w_tx_lo),
     ADDI(R0, R0, 1),
     J("tx_wait"),
 
-L("done"),
-    J("done"),
-
 L("hi"),
-    list(ord(c) for c in "Hello, world!"),
+    list(ord(c) for c in "Hello, world!"), 0
 ]
 
 # bootload the program to the board on the given port
