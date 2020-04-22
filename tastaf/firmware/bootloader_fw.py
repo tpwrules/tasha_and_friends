@@ -136,10 +136,12 @@ def _bfw_rx_packet():
         # the host just didn't send anything
         MOVI(r.issue, 4),
         JAL(r.lr, lp+"rx_word"),
-        # length is the low byte
-        ANDI(r.length, r.got_word, 0x00FF),
-        # and the command is the high byte
+        # the command is the high byte
         SRLI(r.command, r.got_word, 8),
+        # and length is the low byte
+        ANDI(r.length, r.got_word, 0x00FF),
+        # if the length is 0, we don't have to try and receive any more words
+        BZ1(lp+"do_crc"),
 
         # make sure we have the buffer space to accept the packet
         MOVI(r.issue, 1), # that would be issue type 1
@@ -160,6 +162,7 @@ def _bfw_rx_packet():
     r -= "buf_pos buf_end"
     r += "R6:calc_crc"
     fw.append([
+    L(lp+"do_crc"),
         # finally, there is the CRC word. we have to read the CRC result from
         # the UART before we receive the word, otherwise the CRC result will
         # include the CRC word which doesn't make any sense
@@ -228,7 +231,7 @@ def _bfw_tx_packet():
         # save the length
         ANDI(r.length, r.send_word, 0x00FF),
         # send out the word to start the packet
-        JR(r.lr, lp+"tx_word"),
+        JAL(r.lr, lp+"tx_word"),
 
         CMPI(r.length, 0), # don't try to send any words if there aren't any
         BEQ(lp+"words_done"),

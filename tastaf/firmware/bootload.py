@@ -34,12 +34,11 @@ class Bootloader:
     def _ser_read(self, length):
         read = b""
         while length > 0:
-            new = ser.read(length)
+            new = self.port.read(length)
             if len(new) == 0:
                 raise Timeout("read timeout")
             read += new
             length -= len(new)
-        print(read)
         return read
 
     def _command(self, command, params):
@@ -51,10 +50,9 @@ class Bootloader:
         cmd_words.append((command << 8) + len(params))
         # then send all the parameters
         cmd_words.extend(params)
-        cmd_bytes = struct.pack("{}<H".format(len(cmd_words)), *cmd_words)
+        cmd_bytes = struct.pack("<{}H".format(len(cmd_words)), *cmd_words)
         # and finally, the CRC of everything above
-        cmd_bytes = cmd_bytes + \
-            crc_16_kermit(cmd_bytes).to_bytes(2, byteorder="little")
+        cmd_bytes += crc_16_kermit(cmd_bytes).to_bytes(2, byteorder="little")
 
         # reset the serial transmission to avoid sending or receiving junk from
         # previous (potentially errored) commands
@@ -64,23 +62,26 @@ class Bootloader:
         self.port.write(cmd_bytes)
 
         # read back the response word (which is secretly two bytes)
-        resp_length = self._ser_read(1)[0]
+        resp_length = self._ser_read(1)[0] # + 1 for CRC word
         resp_code = self._ser_read(1)[0]
-        resp_bytes = ser_read(ser, 2*(resp_length+1)) # + 1 to account for CRC
-        resp_data = struct.unpack("{}<H".format(resp_length), resp_bytes)
+        resp_bytes = bytes([resp_length, resp_code])
+        resp_bytes += self._ser_read(2*(resp_length+1)) # + 1 for CRC word
+        # + 2 for CRC and command words
+        resp_data = struct.unpack("<{}H".format(resp_length+2), resp_bytes)
         
         # verify CRC (not including the CRC itself)
         calc_crc = crc_16_kermit(resp_bytes[:-2])
         resp_data, claimed_crc = resp_data[:-1], resp_data[-1]
         if calc_crc != claimed_crc:
-            raise BadCRC(crc, claimed_crc)
+            raise BadCRC(calc_crc, claimed_crc)
 
         # handle error response
         if resp_code == 2:
-            problems = {0: "unknown command", 1: "invalid length",
-                2: "bad CRC", 3: "timeout"}
-            raise BLError("was told '{}'".format(
-                problems.get(resp_data[0], resp_data[0])))
+            if resp_data[1] == 3:
+                raise Timeout("target said 'timeout'")
+            problems = {0: "unknown command", 1: "invalid length", 2: "bad CRC"}
+            raise BootloadError("target said '{}'".format(
+                problems.get(resp_data[1], resp_data[1])))
 
         return resp_code, resp_data
 
@@ -100,9 +101,9 @@ class Bootloader:
             while timeout is None or (time.monotonic() < timed_out):
                 # say hello
                 try:
-                    resp_code, resp_data = self._command()
-                except Exception as e:
-                    # ignore any errors and try to do it again, hopefully when
+                    resp_code, resp_data = self._command(1, [])
+                except Timeout as e:
+                    # ignore timeouts and try to do it again, hopefully when
                     # the target has timed out and everything is reset.
                     continue
                 # if we succeeded, we are done
@@ -131,4 +132,3 @@ def do_bootload(port, program):
         bootloader.connect(port, timeout=None)
 
     print("Connected!")
-
