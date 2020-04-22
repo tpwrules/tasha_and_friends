@@ -197,10 +197,13 @@ def make_bootloader(info_words):
         # then the status code
         MOV(r.comm_word, r.cmd_status),
         JAL(r.lr, "tx_word"),
-        # and finally, the CRC (this resets the CRC to 0)
+        # last is the CRC, but the CRC of the last byte is still being
+        # calculated right now. reading it this instruction gives garbage.
+        MOV(r.lr, r.send_lr), # so prepare to return to our caller
+        # now we can read and send it (and sending it resets the CRC to 0)
         LDXA(r.comm_word, p_map.uart.r_crc_value),
-        JAL(r.lr, "tx_word"),
-        JR(r.send_lr, 0),
+        # tx_word will return back to our caller in r.lr
+        J("tx_word"),
     ])
     r -= "send_lr param2 param1"
 
@@ -314,6 +317,8 @@ def make_bootloader(info_words):
         STXA(r.comm_word, p_map.uart.w_tx_hi),
         # and we're done
         JR(r.lr, 0),
+        # WARNING! the CRC is still being calculated, so reading it immediately
+        # after this function returns will return garbage
     ])
 
     # assemble just the code region

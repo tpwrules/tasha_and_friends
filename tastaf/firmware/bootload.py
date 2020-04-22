@@ -47,7 +47,8 @@ class Bootloader:
         if self.port is None:
             raise BootloadError("not connected to target")
 
-        cmd_words = [command, param1, param2]
+        # command is always length 2
+        cmd_words = [(command << 8) + 2, param1, param2]
         cmd_bytes = struct.pack("<{}H".format(len(cmd_words)), *cmd_words)
 
         # reset the buffers to get rid of any junk from previous (perhaps
@@ -106,12 +107,8 @@ class Bootloader:
                     # ignore timeouts and try to do it again, hopefully when
                     # the target has timed out and everything is reset.
                     continue
-                # if we succeeded, we are done
-                if resp_code == 1:
-                    return # port is saved and we are connected
-                else:
-                    raise BootloadError("unexpected response {}".format(
-                        resp_code))
+                # if the response was a success, we are done
+                return
             else: # loop condition failed, i.e. we timed out
                 raise Timeout("connection timeout")
         except:
@@ -167,6 +164,7 @@ class Bootloader:
 
 
 def do_bootload(port, program):
+    program = tuple(program)
     print("Connecting...")
 
     bootloader = Bootloader()
