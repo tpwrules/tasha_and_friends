@@ -435,6 +435,9 @@ def make_bootloader(info_words):
         print("bootrom length {} is under max of {} by {} words".format(
             fw_len, FW_MAX_LENGTH, FW_MAX_LENGTH-fw_len))
 
+    # pad the code region out to line up the info words
+    assembled_fw.extend([0]*(184-fw_len))
+
     # glue on the info words
     assembled_fw.extend(cleaned_info_words)
     # then the (initially zero) RAM region

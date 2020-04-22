@@ -83,7 +83,7 @@ class Bootloader:
             raise BootloadError("target said '{}'".format(
                 problems.get(resp_data[1], resp_data[1])))
 
-        return resp_code, resp_data
+        return resp_code, resp_data[1:]
 
     # connect to the target on serial port "port". give up after (about)
     # "timeout" seconds. return if connected or throw exception if failure
@@ -110,13 +110,28 @@ class Bootloader:
                 if resp_code == 1:
                     return # port is saved and we are connected
                 else:
-                    raise BootloaderError("unexpected response {}".format(
+                    raise BootloadError("unexpected response {}".format(
                         resp_code))
             else: # loop condition failed, i.e. we timed out
                 raise Timeout("connection timeout")
         except:
             self.port = None # we did not actually connect
             raise
+
+    # read "length" words from the target starting at "addr"
+    def read_memory(self, addr, length):
+        all_data = []
+        # we can only read a certain number of words at a time
+        for start in range(0, length, PACKET_MAX_LENGTH):
+            curr_addr = addr + start
+            end = min(start+PACKET_MAX_LENGTH, length)
+            resp_code, resp_data = self._command(4, [curr_addr, end-start])
+            if resp_code != 3:
+                raise BootloadError("unexpected response {}".format(
+                        resp_code))
+            all_data.extend(resp_data)
+
+        return all_data
 
 def do_bootload(port, program):
     print("Connecting...")
@@ -132,3 +147,9 @@ def do_bootload(port, program):
         bootloader.connect(port, timeout=None)
 
     print("Connected!")
+
+    print("Reading info...")
+    info_words = bootloader.read_memory(ROM_INFO_WORDS, 8)
+    if info_words[-1] != BOOTLOADER_VERSION:
+        raise BootloadError("wrong bootloader version {} (expected {})".format(
+            info_words[-1], BOOTLOADER_VERSION))
