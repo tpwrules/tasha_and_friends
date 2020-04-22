@@ -7,22 +7,19 @@ import struct
 import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 
-from .bootloader_fw import ROM_INFO_WORDS, PACKET_MAX_LENGTH, BOOTLOADER_VERSION
+from .bootloader_fw import ROM_INFO_WORDS, BOOTLOADER_VERSION
 
 class BootloadError(Exception): pass
 
 class BadCRC(BootloadError):
-    def __init__(self, expected, received):
-        self.expected = expected
+    def __init__(self, received):
         self.received = received
 
     def __repr__(self):
-        return "BadCRC(expected=0x{:4X}, received=0x{:4X})".format(
-            self.expected, self.received)
+        return "BadCRC(received=0x{:4X})".format(self.received)
 
     def __str__(self):
-        return "Bad CRC: expected 0x{:04X} but received 0x{:04X}".format(
-            self.expected, self.received)
+        return "Bad CRC: expected 0 but received 0x{:04X}".format(self.received)
 
 class Timeout(BootloadError): pass
 
@@ -41,58 +38,60 @@ class Bootloader:
             length -= len(new)
         return read
 
-    def _command(self, command, params):
+    def _ser_write(self, data):
+        sent_len = 0
+        while sent_len != len(data):
+            sent_len += self.port.write(data[sent_len:])
+
+    def _send_command(self, command, param1, param2):
         if self.port is None:
             raise BootloadError("not connected to target")
 
-        cmd_words = []
-        # start with the command word
-        cmd_words.append((command << 8) + len(params))
-        # then send all the parameters
-        cmd_words.extend(params)
+        cmd_words = [command, param1, param2]
         cmd_bytes = struct.pack("<{}H".format(len(cmd_words)), *cmd_words)
-        # and finally, the CRC of everything above
-        cmd_bytes += crc_16_kermit(cmd_bytes).to_bytes(2, byteorder="little")
 
-        # reset the serial transmission to avoid sending or receiving junk from
-        # previous (potentially errored) commands
+        # reset the buffers to get rid of any junk from previous (perhaps
+        # failed) commands
         self.port.reset_input_buffer()
         self.port.reset_output_buffer()
-        # then send the current command
-        self.port.write(cmd_bytes)
 
-        # read back the response word (which is secretly two bytes)
-        resp_length = self._ser_read(1)[0] # + 1 for CRC word
-        resp_code = self._ser_read(1)[0]
-        resp_bytes = bytes([resp_length, resp_code])
-        resp_bytes += self._ser_read(2*(resp_length+1)) # + 1 for CRC word
-        # + 2 for CRC and command words
-        resp_data = struct.unpack("<{}H".format(resp_length+2), resp_bytes)
-        
-        # verify CRC (not including the CRC itself)
-        calc_crc = crc_16_kermit(resp_bytes[:-2])
-        resp_data, claimed_crc = resp_data[:-1], resp_data[-1]
-        if calc_crc != claimed_crc:
-            raise BadCRC(calc_crc, claimed_crc)
+        self._ser_write(cmd_bytes)
+        self._ser_write(
+            crc_16_kermit(cmd_bytes).to_bytes(2, byteorder="little"))
 
-        # handle error response
-        if resp_code == 2:
-            if resp_data[1] == 3:
-                raise Timeout("target said 'timeout'")
-            problems = {0: "unknown command", 1: "invalid length", 2: "bad CRC"}
-            raise BootloadError("target said '{}'".format(
-                problems.get(resp_data[1], resp_data[1])))
+    def _check_response(self):
+        if self.port is None:
+            raise BootloadError("not connected to target")
 
-        return resp_code, resp_data[1:]
+        resp_bytes = self._ser_read(6)
+        # the last bytes of the response are the response's CRC. if we CRC those
+        # too, then we will get a CRC of 0 if everything is correct.
+        crc = crc_16_kermit(resp_bytes)
+        if crc != 0:
+            raise BadCRC(crc)
+
+        resp_words = struct.unpack("<3H", resp_bytes)
+        if resp_words[0] != 0x0101:
+            raise BootloadError("unexpected response word 0x{:04X}".format(
+                resp_words[0]))
+
+        if resp_words[1] == 3: # success
+            return
+
+        if resp_words[1] == 2:
+            raise Timeout("target said 'RX error/timeout'")
+        problems = {0: "unknown/invalid command", 1: "bad CRC"}
+        raise BootloadError("target said '{}'".format(
+            problems.get(resp_words[1], resp_words[1])))
 
     # connect to the target on serial port "port". give up after (about)
     # "timeout" seconds. return if connected or throw exception if failure
     def connect(self, port, timeout=None):
-        # create a serial port to connect to the target. we set a 600ms timeout,
-        # slightly over the 500ms timeout in the firmware, to make sure we
+        # create a serial port to connect to the target. we set a 200ms timeout,
+        # slightly over the 150ms timeout in the firmware, to make sure we
         # receive timeout errors.
 
-        port = serial.Serial(port=port, baudrate=2_000_000, timeout=0.6)
+        port = serial.Serial(port=port, baudrate=2_000_000, timeout=0.2)
         self.port = port
 
         try:
@@ -100,8 +99,9 @@ class Bootloader:
                 timed_out = time.monotonic()+timeout
             while timeout is None or (time.monotonic() < timed_out):
                 # say hello
+                self._send_command(1, 0, 0)
                 try:
-                    resp_code, resp_data = self._command(1, [])
+                    self._check_response()
                 except Timeout as e:
                     # ignore timeouts and try to do it again, hopefully when
                     # the target has timed out and everything is reset.
@@ -120,37 +120,51 @@ class Bootloader:
 
     # read "length" words from the target starting at "addr"
     def read_memory(self, addr, length):
-        all_data = []
-        # we can only read a certain number of words at a time
-        for start in range(0, length, PACKET_MAX_LENGTH):
-            curr_addr = addr + start
-            end = min(start+PACKET_MAX_LENGTH, length)
-            resp_code, resp_data = self._command(4, [curr_addr, end-start])
-            if resp_code != 3:
-                raise BootloadError("unexpected response {}".format(resp_code))
-            all_data.extend(resp_data)
+        # send the read command first
+        self._send_command(4, addr, length)
+        # then make sure it was accepted
+        self._check_response()
 
-        return all_data
+        # now read back all the data (and CRC)
+        resp_bytes = self._ser_read(2*(length+1))
+        # validate the post-data response
+        self._check_response()
+
+        # validate the data CRC. as before, if we CRC the CRC, we expect CRC = 0
+        crc = crc_16_kermit(resp_bytes)
+        if crc != 0:
+            raise BadCRC(crc)
+
+        resp_words = struct.unpack("<{}H".format(length), resp_bytes[:-2])
+        return resp_words
 
     # write the "data" words to the target starting at "addr"
     def write_memory(self, addr, data):
-        # we can only write a certain number of words at a time
-        for start in range(0, len(data), PACKET_MAX_LENGTH-1):
-            resp_code, resp_data = self._command(2,
-                [addr+start, *data[start:start+PACKET_MAX_LENGTH-1]])
-            if resp_code != 1:
-                raise BootloadError("unexpected response {}".format(resp_code))
+        # send the write command first
+        self._send_command(2, addr, len(data))
+        # theoretically we should make sure it was accepted here, but then we
+        # would have to pay the 16ms latency penalty. so, we don't! and just get
+        # on with sending the data.
+        data_bytes = struct.pack("<{}H".format(len(data)), *data)
+        data_crc = crc_16_kermit(data_bytes).to_bytes(2, byteorder="little")
+        self._ser_write(data_bytes)
+        self._ser_write(data_crc)
+
+        # validate that the command was processed correctly
+        self._check_response()
+        # and that the data was received correctly
+        self._check_response()
 
     # start program execution at "addr". if it succeeds, it closes the
     # connection. if it fails, it raises an exception.
     def start_execution(self, addr):
-        resp_code, resp_data = self._command(3, [addr])
-        if resp_code != 1:
-            raise BootloadError("unexpected response {}".format(resp_code))
+        self._send_command(3, addr, 0)
+        self._check_response()
 
         port = self.port
         self.port = None
         port.close()
+
 
 def do_bootload(port, program):
     print("Connecting...")
@@ -159,7 +173,7 @@ def do_bootload(port, program):
 
     # try to connect while assuming the board is responsive
     try:
-        bootloader.connect(port, timeout=2)
+        bootloader.connect(port, timeout=1)
     except Timeout: # it wasn't.
         # ask user to try and reset it so the bootloader starts
         print("    (board is unresponsive, please reset it)")
