@@ -133,6 +133,16 @@ class Bootloader:
 
         return all_data
 
+    # write the "data" words to the target starting at "addr"
+    def write_memory(self, addr, data):
+        # we can only write a certain number of words at a time
+        for start in range(0, len(data), PACKET_MAX_LENGTH-1):
+            resp_code, resp_data = self._command(2,
+                [addr+start, *data[start:start+PACKET_MAX_LENGTH-1]])
+            if resp_code != 1:
+                raise BootloadError("unexpected response {}".format(
+                        resp_code))
+
 def do_bootload(port, program):
     print("Connecting...")
 
@@ -153,3 +163,12 @@ def do_bootload(port, program):
     if info_words[-1] != BOOTLOADER_VERSION:
         raise BootloadError("wrong bootloader version {} (expected {})".format(
             info_words[-1], BOOTLOADER_VERSION))
+
+    print("Downloading program...")
+    bootloader.write_memory(0, program)
+    print("Verifying program...")
+    read_program = bootloader.read_memory(0, len(program))
+    if program != read_program:
+        raise BootloadError("verification failure")
+
+    print("Success!")
