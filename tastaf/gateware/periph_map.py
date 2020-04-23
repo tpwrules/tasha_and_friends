@@ -52,7 +52,25 @@ _uart = _namedtupleton("uart",
     )
 )
 
+_timer_periph_num = 2
+# put registers into array to emphasize identicality
+_timer = tuple(
+    # these must match timer.py!!!!!!
+    (_namedtupleton("timer_n",
+        **_reg_addr(_timer_periph_num,
+            r_ended=ti,
+            w_value=ti,
+        )
+    )) for ti in range(2) # NUM_TIMERS
+)
+_timer = _namedtupleton("timer",
+    periph_num=_timer_periph_num,
+
+    timer=_timer,
+)
+
 p_map = _namedtupleton("p_map",
     reset_req=_reset_req,
     uart=_uart,
+    timer=_timer,
 )

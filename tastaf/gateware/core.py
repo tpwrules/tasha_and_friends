@@ -7,7 +7,7 @@ from boneless.gateware import ALSRU_4LUT, CoreFSM
 from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
 
-from . import reset_req, uart
+from . import reset_req, uart, timer
 from .periph_map import p_map
 from ..firmware.bootloader_fw import make_bootloader
 
@@ -42,6 +42,9 @@ class TASHACore(Elaboratable):
         # ultra fast TASes in without a problem.
         self.uart = uart.SysUART(divisor=uart.calculate_divisor(12e6, 2000000))
 
+        # the (very simple) timers. used for various housekeeping things
+        self.timer = timer.Timer()
+
     def elaborate(self, platform):
         m = Module()
         m.submodules.cpu_core = cpu_core = self.cpu_core
@@ -51,6 +54,7 @@ class TASHACore(Elaboratable):
 
         m.submodules.reset_req = reset_req = self.reset_req
         m.submodules.uart = uart = self.uart
+        m.submodules.timer = timer = self.timer
 
         # hook up main bus. the main RAM gets the first half and the boot ROM
         # gets the second (though nominally, it's from 0xFF00 to 0xFFFF)
@@ -103,7 +107,7 @@ class TASHACore(Elaboratable):
         # regions can be addressed with the 1-word form of the external bus
         # instructions. each peripheral gets 1 read and 1 write enable bit, 4
         # address bits, 16 write data bits, and gives back 16 read data bits
-        NUM_PERIPHS = 2
+        NUM_PERIPHS = 3
         periph_en = tuple(Signal(1) for _ in range(NUM_PERIPHS))
         periph_re = tuple(Signal(1) for _ in range(NUM_PERIPHS))
         periph_we = tuple(Signal(1) for _ in range(NUM_PERIPHS))
@@ -154,6 +158,15 @@ class TASHACore(Elaboratable):
 
             uart.i_rx.eq(self.uart_signals.i_rx),
             self.uart_signals.o_tx.eq(uart.o_tx),
+        ]
+
+        # hook up the timers
+        m.d.comb += [
+            timer.i_re.eq(periph_re[p_map.timer.periph_num]),
+            timer.i_we.eq(periph_we[p_map.timer.periph_num]),
+            timer.i_addr.eq(periph_addr),
+            timer.i_wdata.eq(periph_wdata),
+            periph_rdata[p_map.timer.periph_num].eq(timer.o_rdata),
         ]
 
         return m

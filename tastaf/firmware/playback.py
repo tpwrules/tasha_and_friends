@@ -107,6 +107,8 @@ LATCH_BUF_END = 0x4000
 FW_MAX_LENGTH = 0x3C0
 INITIAL_REGISTER_WINDOW = 0x3F8
 
+print(p_map.timer)
+
 def make_firmware():
     fw = [
         # start from "reset" (i.e. download is finished)
@@ -129,10 +131,13 @@ def make_firmware():
     L("main_loop"),
 
     # temporary test
-    L("rx_wait"),
-        LDXA(R1, p_map.uart.r_rx_lo),
-        ROLI(R1, R1, 1),
-        BS1("rx_wait"),
+    
+        MOVI(R0, int(12e6/256)), # every second
+        STXA(R0, p_map.timer.timer[0].w_value),
+    L("timer_wait"),
+        LDXA(R0, p_map.timer.timer[0].r_ended),
+        AND(R0, R0, R0),
+        BZ1("timer_wait"),
 
         MOVR(R0, "hi"),
 
@@ -143,7 +148,7 @@ def make_firmware():
 
         LD(R1, R0, 0),
         CMPI(R1, 0),
-        BEQ("rx_wait"),
+        BEQ("main_loop"),
         STXA(R1, p_map.uart.w_tx_lo),
         ADDI(R0, R0, 1),
         J("tx_wait"),
