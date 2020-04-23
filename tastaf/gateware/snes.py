@@ -8,16 +8,27 @@ from .setreset import *
 
 # Register Map
 
-# 0x0: (W) Latch Ack / (R) Latch
-#   Write: writing anything will ack the latch signal and reset to 0
-#    Read: the register will be 1 if a latch fall happened or 0 if not
+# 0x0: (R) Did Latch / (W) Force Latch
+#    Read: bit  0: 1 if a latch event occurred since acknowledge, 0 if not
+#   Write:   15-0: write anything to force a latch event
+#   A latch event is forced by setting the latch line to 0 for one cycle. This
+#   caues a falling edge, if the console is not already holding it low. If it
+#   is, then the latch force has no effect.
 
-# CONTROLLER BUTTONS: bit 15 to bit 0, 1 if pressed: BYsSudlrAXLR1234
+# 0x1: (R) Missed Latch & Acknowledge
+#    Read: bit  0: 1 if a latch event was missed, 0 if not
+#   A latch event is considered "missed" if it occurred while Did Latch above
+#   was 1. Reading this register acknowledges the latch by clearing both Did
+#   Latch and Missed Latch.
 
-# 0x8: player 1 data 0 buttons
-# 0x9: player 1 data 1 buttons
-# 0xC: player 2 data 0 buttons
-# 0xD: player 2 data 1 buttons
+
+# CONTROLLER BUTTON REGISTERS: bit 15 to bit 0, 1 if pressed: BYsSudlrAXLR1234
+# 0x4: player 1 data 0 buttons
+# 0x5: player 1 data 1 buttons
+# 0x6: player 2 data 0 buttons
+# 0x7: player 2 data 1 buttons
+# When a latch event occurs, these registers are transferred to the output shift
+# registers so the console can shift the data out.
 
 # drive one controller data line. really just a 16 bit shift register.
 class DataLineDriver(Elaboratable):
@@ -65,6 +76,7 @@ class Controllers(Elaboratable):
             "p2d1": Signal(16),
         }
 
+        self.i_force_latch = Signal() # pretend a latch occurred
         # latch line fell this cycle (and buttons will be transferred)
         self.o_latched = Signal()
 
@@ -89,7 +101,7 @@ class Controllers(Elaboratable):
         latched = Signal()
         prev_latch = Signal()
         m.d.sync += prev_latch.eq(i_latch)
-        m.d.comb += latched.eq(prev_latch & ~i_latch)
+        m.d.comb += latched.eq(prev_latch & ~i_latch & ~self.i_force_latch)
         # tell others the latch status
         m.d.comb += self.o_latched.eq(latched)
 
@@ -129,29 +141,46 @@ class SNES(Elaboratable):
         m = Module()
         m.submodules.controllers = controllers = self.controllers
 
-        # define the signals that make up the registers
+        # did_latch is priority set so that the SNES can always make sure its
+        # latch gets recognized. missed_latch is priority reset, so that if they
+        # get acknowledged at the same time a latch happens, it doesn't get
+        # counted as a missed latch.
         did_latch = SetReset(m, priority="set")
-        m.d.comb += did_latch.set.eq(self.controllers.o_latched)
+        missed_latch = SetReset(m, priority="reset")
+
+        m.d.comb += [
+            did_latch.set.eq(self.controllers.o_latched),
+            missed_latch.set.eq(did_latch.value & self.controllers.o_latched),
+        ]
 
         # handle the boneless bus.
-        read_data = Signal(16) # it expects one cycle of read latency
-        m.d.sync += self.o_rdata.eq(read_data)
+        read_data = Signal() # it expects one cycle of read latency
+        m.d.sync += self.o_rdata.eq(Cat(read_data, 0))
 
         with m.If(self.i_re):
-            # the only thing to read is latch status
-            m.d.comb += read_data.eq(Cat(did_latch.value, 0))
+            with m.Switch(self.i_addr[:1]):
+                with m.Case(0):
+                    m.d.comb += read_data.eq(did_latch.value)
+                with m.Case(1):
+                    m.d.comb += [
+                        # say if we missed the latch
+                        read_data.eq(missed_latch.value),
+                        # and reset the status
+                        did_latch.reset.eq(1),
+                        missed_latch.reset.eq(1),
+                    ]
 
         with m.If(self.i_we):
-            with m.Switch(self.i_addr):
-                with m.Case(0): # latch ack
-                    m.d.comb += did_latch.reset.eq(1)
-                with m.Case(0x8):
+            with m.Switch(self.i_addr[:3]):
+                with m.Case(0): # force a latch
+                    m.d.comb += controllers.i_force_latch.eq(1)
+                with m.Case(0x4):
                     m.d.sync += controllers.i_buttons["p1d0"].eq(self.i_wdata)
-                with m.Case(0x9):
+                with m.Case(0x5):
                     m.d.sync += controllers.i_buttons["p1d1"].eq(self.i_wdata)
-                with m.Case(0xC):
+                with m.Case(0x6):
                     m.d.sync += controllers.i_buttons["p2d0"].eq(self.i_wdata)
-                with m.Case(0xD):
+                with m.Case(0x7):
                     m.d.sync += controllers.i_buttons["p2d1"].eq(self.i_wdata)
 
         return m
