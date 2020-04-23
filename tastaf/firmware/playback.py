@@ -56,8 +56,11 @@
 #   bits 7-0: number of parameters, always 3 for the playback system's responses
 #   bits 15-8: result code, always 0x10 for the playback system's responses
 # second word: last error:
-#              0=no error, 1=invalid command, 2=bad CRC, 3=RX error/timeout
-#              4=buffer underrun
+#              REGULAR ERRORS
+#              0x00=no error, 0x01=invalid command, 0x02=bad CRC, 0x03=RX error,
+#              0x04=RX timeout
+#              FATAL ERRORS (playback must be restarted)
+#              0x40=buffer underrun, 0x41=missed latch
 #  third word: stream position
 # fourth word: buffer space remaining
 #  fifth word: CRC of previous words
@@ -81,6 +84,7 @@
 #   purpose: request a status packet be immediately sent.
 
 import random
+from enum import IntEnum
 
 from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
@@ -88,10 +92,24 @@ from .bonetools import *
 
 from ..gateware.periph_map import p_map
 
-# MEMORY MAP We have a 16K word RAM into which we have to fit all the code,
-# buffers, and register windows. We need as large a buffer as possible. We don't
-# bother with write protection since the system can just be reset and the
-# application can be redownloaded in the event of any corruption.
+__all__ = ["make_firmware", "ErrorCode"]
+
+class ErrorCode(IntEnum):
+    NONE = 0x00
+    INVALID_COMMAND = 0x01
+    BAD_CRC = 0x02
+    RX_ERROR = 0x03
+    RX_TIMEOUT = 0x04
+    # this code and after are fatal errors
+    FATAL_ERROR_START = 0x40
+    BUFFER_UNDERRUN = 0x40
+    MISSED_LATCH = 0x41
+
+# MEMORY MAP
+# We have a 16K word RAM into which we have to fit all the code, buffers, and
+# register windows. We need as large a buffer as possible. We don't bother with
+# write protection since the system can just be reset and the application can be
+# redownloaded in the event of any corruption.
 
 # Address     | Size  | Purpose
 # ------------+-------+--------------------------------
@@ -103,13 +121,128 @@ from ..gateware.periph_map import p_map
 # naturally is.
 LATCH_BUF_START = 0x400
 LATCH_BUF_END = 0x4000
+LATCH_BUF_SIZE = (LATCH_BUF_END-LATCH_BUF_START)//5
 
 FW_MAX_LENGTH = 0x3C0
 INITIAL_REGISTER_WINDOW = 0x3F8
 
-print(p_map.timer)
+# variable number in the "vars" array. we don't bother giving variables
+# individual labels because loading a variable from a label requires a register
+# equal to zero, and the non-EXTI immediate size is smaller. so if we load the
+# base of all the variables into that register, we can load any number of
+# variables without having to keep a register zeroed and without having to use
+# EXTIs to address anything.
+class Vars(IntEnum):
+    # the buffer is a ring buffer. head == tail is empty, head-1 == tail is full
+    # (mod size). note that these are in units of latches, not words.
+    buf_tail = 0
+    buf_head = 1
 
-def make_firmware():
+    stream_pos = 2
+
+# queue an error packet for transmission and return to main loop
+# on entry (in caller window)
+# R5: error code
+def f_handle_error():
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager("R6:fp R5:error_code")
+    fw = [
+        # set up register frame and load parameters
+        LDW(r.fp, -8),
+        LD(r.error_code, r.fp, 5),
+
+        # for now just blast the error out over the UART
+    L(lp+"blast"),
+        STXA(r.error_code, p_map.uart.w_tx_lo),
+        J(lp+"blast"),
+    ]
+
+    return fw
+
+# put a new latch into the SNES interface if necessary
+# on entry (in caller window)
+# R7: return address
+def f_update_interface():
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager("R5:buf_head R4:buf_tail R3:buf_addr R2:status "
+        "R1:latch_data R0:vars")
+    fw = [
+        # set up register frame
+        ADJW(-8),
+        # did the data in the interface get latched?
+        LDXA(r.status, p_map.snes.r_did_latch),
+        AND(r.status, r.status, r.status),
+        BZ(lp+"ret"), # if zero, then no; we don't need to put anything new in
+
+        # it did, so we have to update it. load the buffer pointers
+        MOVR(r.vars, "vars"),
+        LD(r.buf_head, r.vars, Vars.buf_head),
+        LD(r.buf_tail, r.vars, Vars.buf_tail),
+        # is there anything in there?
+        CMP(r.buf_head, r.buf_tail),
+        BEQ(lp+"empty"), # the pointers are equal, so nope
+        # ah, good. there is. convert the buffer tail index into the address
+        SLLI(r.buf_addr, r.buf_tail, 2),
+        ADD(r.buf_addr, r.buf_addr, r.buf_tail),
+        ADDI(r.buf_addr, r.buf_addr, LATCH_BUF_START),
+        # then transfer the data to the interface
+        LD(r.latch_data, r.buf_addr, 0),
+        STXA(r.latch_data, p_map.snes.w_p1d0),
+        LD(r.latch_data, r.buf_addr, 1),
+        STXA(r.latch_data, p_map.snes.w_p1d1),
+        LD(r.latch_data, r.buf_addr, 2),
+        STXA(r.latch_data, p_map.snes.w_p2d0),
+        LD(r.latch_data, r.buf_addr, 3),
+        STXA(r.latch_data, p_map.snes.w_p2d1),
+        # soon we will be transferring an APU frequency control word, but that
+        # doesn't exist yet. just repeat the last store to make sure the timing
+        # matches.
+        LD(r.latch_data, r.buf_addr, 3),
+        STXA(r.latch_data, p_map.snes.w_p2d1),
+        # did we miss a latch? if another latch happened while we were
+        # transferring data (or before we started), the console would get junk.
+        # this read also clears the did latch and missed latch flags.
+        LDXA(r.status, p_map.snes.r_missed_latch_and_ack),
+        AND(r.status, r.status, r.status),
+        BNZ(lp+"missed"), # ah crap, the flag is set.
+        # otherwise, we've done our job. advance the buffer pointer.
+        ADDI(r.buf_tail, r.buf_tail, 1),
+        CMPI(r.buf_tail, LATCH_BUF_SIZE),
+        BNE(lp+"advanced"),
+        MOVI(r.buf_tail, 0),
+    L(lp+"advanced"),
+        ST(r.buf_tail, r.vars, Vars.buf_tail),
+    L(lp+"ret"),
+        ADJW(8),
+        JR(R7, 0), # R7 in caller's window
+    ]
+    r -= "buf_head"
+    r += "R5:error_code"
+    fw.append([
+    L(lp+"empty"), # the buffer is empty so we are screwed
+        MOVI(r.error_code, ErrorCode.BUFFER_UNDERRUN),
+        J("handle_error"),
+    L(lp+"missed"), # we missed a latch so we are screwed
+        MOVI(r.error_code, ErrorCode.MISSED_LATCH),
+        J("handle_error"),
+    ])
+
+    return fw
+
+# we accept some priming latches to download with the code. this way there is
+# some stuff in the buffer before communication gets reestablished. really we
+# only need one latch that we can put in the interface at the very start. just
+# sticking it in the buffer to begin with avoids special-casing that latch, and
+# the extra is nice to jumpstart the buffer.
+def make_firmware(priming_latches=[]):
+    num_priming_latches = len(priming_latches)//5
+    if len(priming_latches) % 5 != 0:
+        raise ValueError("priming latches must have 5 words per latch")
+
+    if num_priming_latches > LATCH_BUF_SIZE-1:
+        raise ValueError("too many priming latches: got {}, max is {}".format(
+            num_priming_latches, LATCH_BUF_SIZE-1))
+
     fw = [
         # start from "reset" (i.e. download is finished)
         
@@ -124,37 +257,36 @@ def make_firmware():
         STXA(R0, p_map.uart.w_rt_timer),
         # write something to reset CRC to its initial value
         STXA(R0, p_map.uart.w_crc_reset),
+        # write something to force a latch so the first latch makes its way into
+        # the interface
+        STXA(R0, p_map.snes.w_force_latch),
     ]
-    r = RegisterManager(
-        )
+    r = RegisterManager("R7:lr")
     fw.append([
     L("main_loop"),
+        # eventually we will communicate but for now just practice sending out
+        # latches
+        JAL(r.lr, "update_interface"),
+        J("main_loop"),
+    ])
 
-    # temporary test
-    
-        MOVI(R0, int(12e6/256)), # every second
-        STXA(R0, p_map.timer.timer[0].w_value),
-    L("timer_wait"),
-        LDXA(R0, p_map.timer.timer[0].r_ended),
-        AND(R0, R0, R0),
-        BZ1("timer_wait"),
+    # define all the variables
+    defs = [0]*len(Vars)
+    # the buffer is primed with some latches so that we can start before
+    # communication gets reestablished
+    defs[Vars.buf_head] = num_priming_latches
+    defs[Vars.stream_pos] = num_priming_latches
+    fw.append([
+    L("vars"),
+        defs
+    ])
 
-        MOVR(R0, "hi"),
-
-    L("tx_wait"),
-        LDXA(R1, p_map.uart.r_tx_status),
-        ANDI(R1, R1, 1),
-        BZ0("tx_wait"),
-
-        LD(R1, R0, 0),
-        CMPI(R1, 0),
-        BEQ("main_loop"),
-        STXA(R1, p_map.uart.w_tx_lo),
-        ADDI(R0, R0, 1),
-        J("tx_wait"),
-
-    L("hi"),
-        list(ord(c) for c in "Hello, world!"), 0
+    # include all the functions
+    fw.append([
+    L("update_interface"),
+        f_update_interface(),
+    L("handle_error"),
+        f_handle_error(),
     ])
 
     # assemble just the code region
@@ -168,7 +300,9 @@ def make_firmware():
         print("firmware length {} is under max of {} by {} words".format(
             fw_len, FW_MAX_LENGTH, FW_MAX_LENGTH-fw_len))
 
-    # we don't need to add anything else. the buffer and the windows will be
-    # garbage, but it doesn't matter.
+    # pad it out until the latch buffer starts
+    assembled_fw.extend([0]*(LATCH_BUF_START-len(assembled_fw)))
+    # then fill it with the priming latches
+    assembled_fw.extend(priming_latches)
 
     return assembled_fw
