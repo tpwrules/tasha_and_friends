@@ -7,7 +7,7 @@ from boneless.gateware import ALSRU_4LUT, CoreFSM
 from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
 
-from . import reset_req, uart, timer
+from . import reset_req, uart, timer, snes
 from .periph_map import p_map
 from ..firmware.bootloader_fw import make_bootloader
 
@@ -45,6 +45,10 @@ class TASHACore(Elaboratable):
         # the (very simple) timers. used for various housekeeping things
         self.timer = timer.Timer()
 
+        # the SNES communication peripheral. emulates the controllers and drives
+        # the APU clock
+        self.snes = snes.SNES(self.snes_signals)
+
     def elaborate(self, platform):
         m = Module()
         m.submodules.cpu_core = cpu_core = self.cpu_core
@@ -55,6 +59,7 @@ class TASHACore(Elaboratable):
         m.submodules.reset_req = reset_req = self.reset_req
         m.submodules.uart = uart = self.uart
         m.submodules.timer = timer = self.timer
+        m.submodules.snes = snes = self.snes
 
         # hook up main bus. the main RAM gets the first half and the boot ROM
         # gets the second (though nominally, it's from 0xFF00 to 0xFFFF)
@@ -107,7 +112,7 @@ class TASHACore(Elaboratable):
         # regions can be addressed with the 1-word form of the external bus
         # instructions. each peripheral gets 1 read and 1 write enable bit, 4
         # address bits, 16 write data bits, and gives back 16 read data bits
-        NUM_PERIPHS = 3
+        NUM_PERIPHS = 4
         periph_en = tuple(Signal(1) for _ in range(NUM_PERIPHS))
         periph_re = tuple(Signal(1) for _ in range(NUM_PERIPHS))
         periph_we = tuple(Signal(1) for _ in range(NUM_PERIPHS))
@@ -167,6 +172,15 @@ class TASHACore(Elaboratable):
             timer.i_addr.eq(periph_addr),
             timer.i_wdata.eq(periph_wdata),
             periph_rdata[p_map.timer.periph_num].eq(timer.o_rdata),
+        ]
+
+        # hook up the SNES interface
+        m.d.comb += [
+            snes.i_re.eq(periph_re[p_map.snes.periph_num]),
+            snes.i_we.eq(periph_we[p_map.snes.periph_num]),
+            snes.i_addr.eq(periph_addr),
+            snes.i_wdata.eq(periph_wdata),
+            periph_rdata[p_map.snes.periph_num].eq(snes.o_rdata),
         ]
 
         return m

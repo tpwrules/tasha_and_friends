@@ -69,8 +69,25 @@ _timer = _namedtupleton("timer",
     timer=_timer,
 )
 
+_snes_periph_num = 3
+_snes = _namedtupleton("snes",
+    periph_num=_snes_periph_num,
+
+    **_reg_addr(_snes_periph_num,
+        # these must match snes.py!!!!!!
+        r_did_latch=0,
+        w_did_latch_clear=0,
+
+        w_p1d0=0x8,
+        w_p1d1=0x9,
+        w_p2d0=0xC,
+        w_p2d1=0xD,
+    )
+)
+
 p_map = _namedtupleton("p_map",
     reset_req=_reset_req,
     uart=_uart,
     timer=_timer,
+    snes=_snes,
 )
