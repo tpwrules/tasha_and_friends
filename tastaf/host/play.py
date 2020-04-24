@@ -20,7 +20,7 @@ def read_latches(num_latches):
     return out.reshape(-1)
 
 # first, we need to load the firmware to do it
-from ..firmware.playback import make_firmware
+from ..firmware.latch_streamer import make_firmware
 from ..firmware.bootload import do_bootload
 
 # include some latches in the firmware so that it can start running before we

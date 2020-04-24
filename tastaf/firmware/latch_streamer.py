@@ -230,6 +230,373 @@ def f_update_interface():
 
     return fw
 
+# jumps right back to main loop
+def send_status_packet():
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager(
+        "R7:lr R6:comm_word R5:txlr R4:temp "
+        "R3:space_remaining R2:buf_head R1:buf_tail R0:vars")
+    fw = [
+    L("send_status_packet"),
+        # calculate status variables
+        MOVR(r.vars, "vars"),
+        LD(r.buf_tail, r.vars, Vars.buf_tail),
+        LD(r.buf_head, r.vars, Vars.buf_head),
+        CMPI(r.buf_tail, r.buf_head),
+        BGEU(lp+"not_wrapped"),
+        ADDI(r.buf_tail, r.buf_tail, LATCH_BUF_SIZE),
+    L(lp+"not_wrapped"),
+        SUB(r.space_remaining, r.buf_tail, r.buf_head),
+        SUBI(r.space_remaining, r.space_remaining, 1), # one is always empty
+    ]
+    r -= "buf_head buf_tail"
+    r += "R2:stream_pos R1:last_error"
+    fw.append([
+        LD(r.stream_pos, r.vars, Vars.stream_pos),
+        # claim for now that there is no error
+        MOVI(r.last_error, 0),
+
+        # reset the UART CRC
+        STXA(r.temp, p_map.uart.w_crc_reset), # we can write anything
+
+        MOVI(r.comm_word, 0x1003),
+        JAL(r.txlr, lp+"tx_comm_word"),
+        MOV(r.comm_word, r.last_error),
+        JAL(r.txlr, lp+"tx_comm_word"),
+        MOV(r.comm_word, r.stream_pos),
+        JAL(r.txlr, lp+"tx_comm_word"),
+        MOV(r.comm_word, r.space_remaining),
+        JAL(r.txlr, lp+"tx_comm_word"),
+        # CRC is still being calculated, prepare for return
+        MOVR(r.txlr, "main_loop"), # return destination
+        # reset the timer to send another status packet in another 25ms
+        MOVI(r.temp, int((12e6*(25/1000))/256)),
+        STXA(r.temp, p_map.timer.timer[0].w_value),
+        # now we can send it
+        LDXA(r.comm_word, p_map.uart.r_crc_value),
+        # fall through
+
+    L(lp+"tx_comm_word"),
+        # set return address to first loop so we can branch to update_interface
+        # and have it return correctly
+        MOVR(r.lr, lp+"tx_lo"),
+    L(lp+"tx_lo"),
+        # wait for buffer space
+        LDXA(r.temp, p_map.uart.r_tx_status),
+        ANDI(r.temp, r.temp, 1),
+        # none yet, go update the interface while we wait
+        BZ0("update_interface"),
+        # then send the low byte
+        STXA(r.comm_word, p_map.uart.w_tx_lo),
+        # and repeat for the high byte
+        MOVR(r.lr, lp+"tx_hi"),
+    L(lp+"tx_hi"),
+        LDXA(r.temp, p_map.uart.r_tx_status),
+        ANDI(r.temp, r.temp, 1),
+        BZ0("update_interface"),
+        STXA(r.comm_word, p_map.uart.w_tx_hi),
+        # and we're done
+        JR(r.txlr, 0),
+        # WARNING! the CRC is still being calculated, so reading it immediately
+        # after this function returns will return garbage
+    ])
+
+    return fw
+
+# jumps right back to main loop.
+# on entry (in caller window)
+# R3: param3
+# R2: param2
+# R1: param1
+# needs to be really fast. we have less than 30 instructions per word!
+def cmd_send_latches():
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager(
+        "R7:lr R6:latch_word R5:rxlr R4:temp "
+        "R3:stream_pos R2:length R1:input_stream_pos R0:vars")
+    fw = [
+    L("cmd_send_latches"),
+        # the host might be sending latches that we already have, so we have to
+        # throw them away to avoid duplicates.
+        MOVR(r.vars, "vars"),
+        LD(r.stream_pos, r.vars, Vars.stream_pos),
+    L(lp+"eat_dupes"),
+        # do the stream positions match yet?
+        CMP(r.stream_pos, r.input_stream_pos),
+        BEQ(lp+"done_eating_dupes"), # yup, we're done
+        # nope, receive a latch and throw it away
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        # input stream pos is advanced by one more
+        ADDI(r.input_stream_pos, r.input_stream_pos, 1),
+        # do we have any latches remaining?
+        SUBI(r.length, r.length, 1),
+        BZ(lp+"loop_done"), # nope, we're done
+        J(lp+"eat_dupes"),
+
+    L(lp+"done_eating_dupes"),
+    ]
+    r -= "stream_pos"
+    r += "R3:buf_head"
+    fw.append([
+        # we assume we have space at the head
+        LD(r.buf_head, r.vars, Vars.buf_head),
+    ])
+    r -= "vars"
+    r += "R0:buf_addr"
+    fw.append([
+        # figure out its address
+        SLLI(r.buf_addr, r.buf_head, 2),
+        ADD(r.buf_addr, r.buf_addr, r.buf_head),
+        ADDI(r.buf_addr, r.buf_addr, LATCH_BUF_START),
+
+    L(lp+"loop"),
+        # receive all the words in this latch
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        ST(r.latch_word, r.buf_addr, 0),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        ST(r.latch_word, r.buf_addr, 1),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        ST(r.latch_word, r.buf_addr, 2),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        ST(r.latch_word, r.buf_addr, 3),
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        ST(r.latch_word, r.buf_addr, 4),
+
+        # stream advanced by 1
+        ADDI(r.input_stream_pos, r.input_stream_pos, 1),
+
+        # bump the head correspondingly
+        ADDI(r.buf_head, r.buf_head, 1),
+        CMPI(r.buf_head, LATCH_BUF_SIZE),
+        BNE(lp+"not_wrapped"),
+        # we're at the end, reset back to the start
+        MOVI(r.buf_head, 0),
+        MOVI(r.buf_addr, LATCH_BUF_START),
+        # do we have any latches remaining?
+        SUBI(r.length, r.length, 1),
+        BNZ(lp+"loop"), # yup, go take care of them
+        J(lp+"loop_done"),
+    L(lp+"not_wrapped"),
+        # we're not at the end, advance the buffer appropriately
+        ADDI(r.buf_addr, r.buf_addr, 5),
+        # do we have any latches remaining?
+        SUBI(r.length, r.length, 1),
+        BNZ(lp+"loop"), # yup, go take care of them
+
+    L(lp+"loop_done"),
+        # receive and validate the CRC
+        JAL(r.rxlr, lp+"rx_latch_word"),
+        LDXA(r.temp, p_map.uart.r_crc_value),
+        AND(r.temp, r.temp, r.temp),
+        BZ0(lp+"bad_crc"),
+    ])
+    r -= "buf_addr"
+    r += "R0:vars"
+    fw.append([
+        # if the CRC validated, then we need to update the head pointer
+        MOVR(r.vars, "vars"),
+        ST(r.buf_head, r.vars, Vars.buf_head),
+        # and stream posiiton
+        ST(r.input_stream_pos, r.vars, Vars.stream_pos),
+        # and now, we are done
+        J("main_loop"),
+    ])
+    r -= "rxlr"
+    r += "R5:error_code"
+    fw.append([
+    L(lp+"bad_crc"),
+        # handle the error
+        MOVI(r.error_code, ErrorCode.BAD_CRC),
+        J("handle_error"),
+    ])
+    r -= "error_code"
+    r += "R5:rxlr"
+    fw.append([
+    L(lp+"rx_latch_word"),
+        # set return address to first loop so we can branch to update_interface
+        # and have it return correctly
+        MOVR(r.lr, lp+"rlw_lo"),
+    L(lp+"rlw_lo"),
+        # check for UART errors (timeouts, overflows, etc.)
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp), # set flags
+        BZ0(lp+"rlw_error"),
+        # check if we have a new byte
+        LDXA(r.latch_word, p_map.uart.r_rx_lo),
+        ROLI(r.latch_word, r.latch_word, 1),
+        # nope, go keep the interface up to date (it will return to rlw_lo)
+        BS1("update_interface"),
+        # we have the low byte in latch_word
+
+        MOVR(r.lr, lp+"rlw_hi"),
+    L(lp+"rlw_hi"),
+        # check again for UART errors
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp),
+        BZ0(lp+"rlw_error"),
+        # and see if we have the high byte yet
+        LDXA(r.temp, p_map.uart.r_rx_hi),
+        ADD(r.temp, r.temp, r.temp),
+        # nope, go keep the interface up to date (it will return to rlw_hi)
+        BC1("update_interface"),
+        # put the bytes together
+        OR(r.latch_word, r.latch_word, r.temp),
+        # and we are done
+        JR(r.rxlr, 0),
+    ])
+    r -= "rxlr"
+    r += "R5:error_code"
+    fw.append([
+    L(lp+"rlw_error"),
+        # assume it was a timeout error
+        MOVI(r.error_code, ErrorCode.RX_TIMEOUT),
+        # was it a timeout error?
+        ANDI(r.latch_word, r.temp, 2),
+        BZ0("handle_error"), # yup, go take care of it
+        # otherwise, it must have been a framing error
+        MOVI(r.error_code, ErrorCode.RX_ERROR),
+        # go deal with it
+        J("handle_error"),
+    ])
+
+    return fw
+
+def main_loop_body():
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager(
+        "R7:lr R6:comm_word R5:rxlr R4:temp "
+        "R3:param3 R2:param2 R1:param1 R0:command")
+    fw = [
+    L("main_loop"),
+        # make sure the interface is kept up to date
+        JAL(r.lr, "update_interface"),
+
+        # is it time to send the status packet?
+        LDXA(r.temp, p_map.timer.timer[0].r_ended),
+        AND(r.temp, r.temp, r.temp),
+        BZ0("send_status_packet"), # the timer ended
+
+        # clear any UART errors and reset the receive timeout
+        MOVI(r.temp, 0xFFFF),
+        STXA(r.temp, p_map.uart.w_error_clear),
+        # reset the CRC engine
+        STXA(r.temp, p_map.uart.w_crc_reset), # we can write anything
+
+        # receive the command packet
+        JAL(r.rxlr, lp+"rx_comm_word"),
+        MOV(r.command, r.comm_word),
+        JAL(r.rxlr, lp+"rx_comm_word"),
+        MOV(r.param1, r.comm_word),
+        JAL(r.rxlr, lp+"rx_comm_word"),
+        MOV(r.param2, r.comm_word),
+        JAL(r.rxlr, lp+"rx_comm_word"),
+        # if the host sent the hello command, we need to check for it now
+        # because it's a word shorter than all the others
+        CMPI(r.command, 0x0102),
+        BEQ(lp+"handle_hello"),
+
+        MOV(r.param3, r.comm_word),
+        JAL(r.rxlr, lp+"rx_comm_word"),
+        # if the current CRC is x, then CRC(x) = 0, always. we use to reset the
+        # CRC to 0 when we are done sending or receiving.
+        # so, we've received all the data words and the CRC. if everything went
+        # okay, the CRC should now be 0.
+        LDXA(r.temp, p_map.uart.r_crc_value),
+        AND(r.temp, r.temp, r.temp),
+        BZ(lp+"crc_ok"),
+    ]
+    r -= "rxlr"
+    r += "R5:error_code"
+    fw.append([
+    L(lp+"crc_bad"),
+        # aw heck, it didn't go okay. send the appropriate error.
+        MOVI(r.error_code, ErrorCode.BAD_CRC),
+        J("handle_error"),
+
+    L(lp+"crc_ok"),
+        # make sure the interface is kept up to date
+        JAL(r.lr, "update_interface"),
+
+        # now we need to figure out the command. the low 8 bits are the length,
+        # which is always 3. the high 8 bits are the command number, and the
+        # first command number is 0x10. each command is separated by 0x100.
+        
+        SUBI(r.command, r.command, 0x1003),
+        BEQ("cmd_send_latches"),
+        SUBI(r.command, r.command, 0x100),
+        BEQ("send_status_packet"),
+
+        # oh no, we don't know the command
+        MOVI(r.error_code, ErrorCode.INVALID_COMMAND),
+        J("handle_error"),
+
+    L(lp+"handle_hello"),
+        # validate the CRC (the word was already received for us)
+        LDXA(r.temp, p_map.uart.r_crc_value),
+        AND(r.temp, r.temp, r.temp),
+        BNZ(lp+"crc_bad"),
+        # we got a valid hello. reset into the bootloader.
+        MOVI(R0, 0xFADE),
+        MOVI(R1, 0xDEAD),
+        STXA(R0, p_map.reset_req.w_enable_key_fade),
+        STXA(R1, p_map.reset_req.w_perform_key_dead),
+        J(-1), # hang until it happens
+    ])
+    r -= "error_code"
+    r += "R5:rxlr"
+    fw.append([
+    L(lp+"rx_comm_word"),
+        # set return address to first loop so we can branch to update_interface
+        # and have it return correctly
+        MOVR(r.lr, lp+"rcw_lo"),
+    L(lp+"rcw_lo"),
+        # check for UART errors (timeouts, overflows, etc.)
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp), # set flags
+        BZ0(lp+"rcw_error"),
+        # check if we have a new byte
+        LDXA(r.comm_word, p_map.uart.r_rx_lo),
+        ROLI(r.comm_word, r.comm_word, 1),
+        # nope, go keep the interface up to date (it will return to rcw_lo)
+        BS1("update_interface"),
+        # we have the low byte in comm_word
+
+        MOVR(r.lr, lp+"rcw_hi"),
+    L(lp+"rcw_hi"),
+        # check again for UART errors
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp),
+        BZ0(lp+"rcw_error"),
+        # and see if we have the high byte yet
+        LDXA(r.temp, p_map.uart.r_rx_hi),
+        ADD(r.temp, r.temp, r.temp),
+        # nope, go keep the interface up to date (it will return to rcw_hi)
+        BC1("update_interface"),
+        # put the bytes together
+        OR(r.comm_word, r.comm_word, r.temp),
+        # and we are done
+        JR(r.rxlr, 0),
+    ])
+    r -= "rxlr"
+    r += "R5:error_code"
+    fw.append([
+    L(lp+"rcw_error"),
+        # was it a timeout error?
+        ANDI(r.comm_word, r.temp, 2),
+        # we ignore those when receiving commands and just reset the reception
+        BZ0("main_loop"), # it was
+        # otherwise, it must have been a framing error
+        MOVI(r.error_code, ErrorCode.RX_ERROR),
+        # go deal with it
+        J("handle_error"),
+    ])
+
+    return fw
+
 # we accept some priming latches to download with the code. this way there is
 # some stuff in the buffer before communication gets reestablished. really we
 # only need one latch that we can put in the interface at the very start. just
@@ -256,20 +623,19 @@ def make_firmware(priming_latches=[]):
         # set UART receive timeout to about 2ms. we can't afford to be waiting!
         MOVI(R0, int((12e6*(2/1000))/256)),
         STXA(R0, p_map.uart.w_rt_timer),
-        # write something to reset CRC to its initial value
-        STXA(R0, p_map.uart.w_crc_reset),
+        # same timeout for the status timer, just cause it's already in the
+        # register. once it expires, the correct value will be loaded.
+        STXA(R0, p_map.timer.timer[0].w_value),
         # write something to force a latch so the first latch makes its way into
         # the interface
         STXA(R0, p_map.snes.w_force_latch),
+        J("main_loop")
     ]
-    r = RegisterManager("R7:lr")
-    fw.append([
-    L("main_loop"),
-        # eventually we will communicate but for now just practice sending out
-        # latches
-        JAL(r.lr, "update_interface"),
-        J("main_loop"),
-    ])
+
+    fw.append(send_status_packet())
+    # run the main loop
+    fw.append(main_loop_body())
+    fw.append(cmd_send_latches())
 
     # define all the variables
     defs = [0]*len(Vars)
@@ -284,10 +650,10 @@ def make_firmware(priming_latches=[]):
 
     # include all the functions
     fw.append([
-    L("update_interface"),
-        f_update_interface(),
     L("handle_error"),
         f_handle_error(),
+    L("update_interface"),
+        f_update_interface(),
     ])
 
     # assemble just the code region
