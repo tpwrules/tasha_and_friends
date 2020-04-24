@@ -1,4 +1,5 @@
-# firmware to play back TASes at high speed
+# firmware to play back TASes at high speed by just streaming in latches.
+# includes APU frequency adjustments too.
 
 # notational notes:
 # boneless is a word-based architecture, it has no concept of the 8 bit byte.
