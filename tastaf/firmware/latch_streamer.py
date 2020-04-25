@@ -140,22 +140,39 @@ class Vars(IntEnum):
     buf_head = 1
 
     stream_pos = 2
+    last_error = 3
 
 # queue an error packet for transmission and return to main loop
 # on entry (in caller window)
 # R5: error code
 def f_handle_error():
     lp = "_{}_".format(random.randrange(2**32))
-    r = RegisterManager("R6:fp R5:error_code")
+    r = RegisterManager("R6:fp R5:error_code R4:last_error R0:vars")
     fw = [
         # set up register frame and load parameters
         LDW(r.fp, -8),
         LD(r.error_code, r.fp, 5),
 
-        # for now just blast the error out over the UART
-    L(lp+"blast"),
-        STXA(r.error_code, p_map.uart.w_tx_lo),
-        J(lp+"blast"),
+        # is the current error a fatal error?
+        CMPI(r.error_code, ErrorCode.FATAL_ERROR_START),
+        BGEU(lp+"transmit"), # yes, send the error out
+        # do we already have an error code stored?
+        # get the last error
+        MOVR(r.vars, "vars"),
+        LD(r.last_error, r.vars, Vars.last_error),
+        CMPI(r.last_error, ErrorCode.NONE),
+        BEQ(lp+"transmit"), # no, so send the current one out
+
+        # otherwise, the host already knows that there was an error, and one
+        # error is likely to lead to more. just go back to the main loop and
+        # wait.
+        J("main_loop"),
+
+    L(lp+"transmit"),
+        # store the error
+        ST(r.error_code, r.vars, Vars.last_error),
+        # then send a status packet containing that error
+        J("send_status_packet")
     ]
 
     return fw
@@ -165,8 +182,8 @@ def f_handle_error():
 # R7: return address
 def f_update_interface():
     lp = "_{}_".format(random.randrange(2**32))
-    r = RegisterManager("R5:buf_head R4:buf_tail R3:buf_addr R2:status "
-        "R1:latch_data R0:vars")
+    r = RegisterManager("R6:last_error R5:buf_head R4:buf_tail R3:buf_addr "
+        "R2:status R1:latch_data R0:vars")
     fw = [
         # set up register frame
         ADJW(-8),
@@ -253,8 +270,7 @@ def send_status_packet():
     r += "R2:stream_pos R1:last_error"
     fw.append([
         LD(r.stream_pos, r.vars, Vars.stream_pos),
-        # claim for now that there is no error
-        MOVI(r.last_error, 0),
+        LD(r.last_error, r.vars, Vars.last_error),
 
         # reset the UART CRC
         STXA(r.temp, p_map.uart.w_crc_reset), # we can write anything
@@ -337,14 +353,18 @@ def cmd_send_latches():
         ADDI(r.input_stream_pos, r.input_stream_pos, 1),
         # do we have any latches remaining?
         SUBI(r.length, r.length, 1),
-        BZ(lp+"loop_done"), # nope, we're done
-        J(lp+"eat_dupes"),
-
-    L(lp+"done_eating_dupes"),
+        BNZ(lp+"eat_dupes"), # yup, go eat more
     ]
     r -= "stream_pos"
     r += "R3:buf_head"
     fw.append([
+        # nope, we don't. load the head so we can save it correctly.
+        LD(r.buf_head, r.vars, Vars.buf_head),
+        # and reload the stream position because we didn't reach it above.
+        LD(r.input_stream_pos, r.vars, Vars.stream_pos),
+        J(lp+"loop_done"),
+
+    L(lp+"done_eating_dupes"),
         # we assume we have space at the head
         LD(r.buf_head, r.vars, Vars.buf_head),
     ])
@@ -409,7 +429,7 @@ def cmd_send_latches():
         # if the CRC validated, then we need to update the head pointer
         MOVR(r.vars, "vars"),
         ST(r.buf_head, r.vars, Vars.buf_head),
-        # and stream posiiton
+        # and stream position
         ST(r.input_stream_pos, r.vars, Vars.stream_pos),
         # and now, we are done
         J("main_loop"),
@@ -465,15 +485,7 @@ def cmd_send_latches():
         MOVI(r.error_code, ErrorCode.RX_TIMEOUT),
         # was it a timeout error?
         ANDI(r.latch_word, r.temp, 2),
-        # if it was, ignore it for now. since we're not handling errors
-        # properly, it can't be corrected. we'll just let it turn into a buffer
-        # underrun or bad CRC or whatever.
-        BZ1(lp+"rlw_framing"), # it wasn't
-        # clear timeout error
-        STXA(r.latch_word, p_map.uart.w_error_clear),
-        # and go back to receiving
-        JR(r.lr, 0),
-    L(lp+"rlw_framing"),
+        BZ0("handle_error"), # it was. go deal with it
         # otherwise, it must have been a framing error
         MOVI(r.error_code, ErrorCode.RX_ERROR),
         # go deal with it
@@ -535,6 +547,20 @@ def main_loop_body():
         J("handle_error"),
 
     L(lp+"crc_ok"),
+        # we've got a valid packet, so reset the error state (if the error was
+        # not fatal)
+
+        # rudely borrow LR
+        MOVR(r.lr, "vars"),
+        LD(r.error_code, r.lr, Vars.last_error),
+        CMPI(r.error_code, ErrorCode.FATAL_ERROR_START),
+        BGEU(lp+"error_done"),
+
+        MOVI(r.error_code, ErrorCode.NONE),
+        ST(r.error_code, r.lr, Vars.last_error),
+
+    L(lp+"error_done"),
+
         # make sure the interface is kept up to date
         JAL(r.lr, "update_interface"),
 

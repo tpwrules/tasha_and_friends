@@ -5,6 +5,7 @@ import struct
 import itertools
 import serial
 import collections
+import random
 
 import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
@@ -81,6 +82,19 @@ out_chunks = collections.deque()
 out_curr_chunk = None
 out_curr_chunk_pos = None
 
+last_error = 0
+
+error_codes = {
+    0x00: "success",
+    0x01: "invalid command",
+    0x02: "bad CRC",
+    0x03: "receive error/overflow",
+    0x04: "receive timeout",
+
+    0x40: "buffer underrun",
+    0x41: "missed latch",
+}
+
 in_chunks = []
 in_chunk_len = 0
 print("Beginning transmission...")
@@ -99,7 +113,28 @@ while True:
         if crc_16_kermit(packet) != 0 or packet[:2] != b'\x03\x10':
             raise Exception("bad packet {!r}".format(packet))
 
-        p_stream_pos, p_buffer_space = struct.unpack("<5H", packet)[2:4]
+        p_error, p_stream_pos, p_buffer_space = \
+            struct.unpack("<5H", packet)[1:4]
+
+        # if this was an error, we need to intervene.
+        if p_error > 0:
+            in_error = True
+
+            if p_error >= 0x40:
+                print("FATAL ", end="")
+            print("ERROR:", error_codes.get(p_error, p_error), " "*50)
+            if p_error >= 0x40:
+                exit(0) # nothing much we can do
+
+            # restart transmission at the last position the device had
+            if stream_pos < p_stream_pos:
+                stream_pos += 65536
+            latch_file.seek(-(stream_pos-p_stream_pos)*16, 1)
+            stream_pos = p_stream_pos
+            last_error = p_error
+        elif p_error == 0:
+            # the error has been handled and we've got a good status report
+            last_error = 0
 
         # the device tells us how much it's received and we know how much we've
         # sent. the difference is the number of latches in transit.
@@ -123,9 +158,16 @@ while True:
             out_chunks.append(cmd)
             out_chunks.append(
                 crc_16_kermit(cmd).to_bytes(2, byteorder="little"))
-            out_chunks.append(data)
-            out_chunks.append(
-                crc_16_kermit(data).to_bytes(2, byteorder="little"))
+            if random.random() > -1:
+                out_chunks.append(data)
+                out_chunks.append(
+                    crc_16_kermit(data).to_bytes(2, byteorder="little"))
+            else:
+                c = crc_16_kermit(data).to_bytes(2, byteorder="little")
+                if random.random() > 0.5:
+                    data = data[:-2]
+                out_chunks.append(data)
+                out_chunks.append(c)
 
             actual_buffer_space -= num_sent
             stream_pos = (stream_pos + num_sent) & 0xFFFF
