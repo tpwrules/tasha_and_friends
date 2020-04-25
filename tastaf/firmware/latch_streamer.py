@@ -147,11 +147,10 @@ class Vars(IntEnum):
 # R5: error code
 def f_handle_error():
     lp = "_{}_".format(random.randrange(2**32))
-    r = RegisterManager("R6:fp R5:error_code R4:last_error R0:vars")
+    r = RegisterManager("R5:error_code R4:last_error R0:vars")
     fw = [
-        # set up register frame and load parameters
-        LDW(r.fp, -8),
-        LD(r.error_code, r.fp, 5),
+        # error code is already in R5. since we don't return, we don't have to
+        # set up our own register frame
 
         # is the current error a fatal error?
         CMPI(r.error_code, ErrorCode.FATAL_ERROR_START),
@@ -194,6 +193,13 @@ def f_update_interface():
 
         # it did, so we have to update it. load the buffer pointers
         MOVR(r.vars, "vars"),
+        # first check if we logged a fatal error
+        LD(r.last_error, r.vars, Vars.last_error),
+        CMPI(r.last_error, ErrorCode.FATAL_ERROR_START),
+        # if we did, just return. this makes sure send_status_packet will
+        # continue sending the packet instead of us re-entering it through
+        # handle_error and sending another packet in the middle of the first
+        BGEU(lp+"ret"),
         LD(r.buf_head, r.vars, Vars.buf_head),
         LD(r.buf_tail, r.vars, Vars.buf_tail),
         # is there anything in there?

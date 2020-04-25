@@ -121,8 +121,10 @@ while True:
             in_error = True
 
             if p_error >= 0x40:
-                print("FATAL ", end="")
-            print("ERROR:", error_codes.get(p_error, p_error), " "*50)
+                print("\n  ^- FATAL ERROR: ", end="")
+            else:
+                print("\n  ^- ERROR: ", end="")
+            print(error_codes.get(p_error, p_error))
             if p_error >= 0x40:
                 exit(0) # nothing much we can do
 
@@ -166,6 +168,8 @@ while True:
                 c = crc_16_kermit(data).to_bytes(2, byteorder="little")
                 if random.random() > 0.5:
                     data = data[:-2]
+                else:
+                    data = bytes([data[0]^0x69]) + data[1:]
                 out_chunks.append(data)
                 out_chunks.append(c)
 
