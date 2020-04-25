@@ -321,6 +321,9 @@ def cmd_send_latches():
         MOVR(r.vars, "vars"),
         LD(r.stream_pos, r.vars, Vars.stream_pos),
     L(lp+"eat_dupes"),
+        # keep the interface full
+        JAL(r.lr, "update_interface"),
+
         # do the stream positions match yet?
         CMP(r.stream_pos, r.input_stream_pos),
         BEQ(lp+"done_eating_dupes"), # yup, we're done
@@ -354,6 +357,9 @@ def cmd_send_latches():
         ADDI(r.buf_addr, r.buf_addr, LATCH_BUF_START),
 
     L(lp+"loop"),
+        # keep the interface full
+        JAL(r.lr, "update_interface"),
+
         # receive all the words in this latch
         JAL(r.rxlr, lp+"rx_latch_word"),
         ST(r.latch_word, r.buf_addr, 0),
@@ -365,6 +371,9 @@ def cmd_send_latches():
         ST(r.latch_word, r.buf_addr, 3),
         JAL(r.rxlr, lp+"rx_latch_word"),
         ST(r.latch_word, r.buf_addr, 4),
+
+        # keep the interface full
+        JAL(r.lr, "update_interface"),
 
         # stream advanced by 1
         ADDI(r.input_stream_pos, r.input_stream_pos, 1),
@@ -456,7 +465,15 @@ def cmd_send_latches():
         MOVI(r.error_code, ErrorCode.RX_TIMEOUT),
         # was it a timeout error?
         ANDI(r.latch_word, r.temp, 2),
-        BZ0("handle_error"), # yup, go take care of it
+        # if it was, ignore it for now. since we're not handling errors
+        # properly, it can't be corrected. we'll just let it turn into a buffer
+        # underrun or bad CRC or whatever.
+        BZ1(lp+"rlw_framing"), # it wasn't
+        # clear timeout error
+        STXA(r.latch_word, p_map.uart.w_error_clear),
+        # and go back to receiving
+        JR(r.lr, 0),
+    L(lp+"rlw_framing"),
         # otherwise, it must have been a framing error
         MOVI(r.error_code, ErrorCode.RX_ERROR),
         # go deal with it
