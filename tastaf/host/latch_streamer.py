@@ -147,6 +147,10 @@ class LatchStreamer:
 
         # initialize stream
         self.stream_pos = len(priming_latches)
+        # keep track of the latches we've sent so we can resend them if there is
+        # an error
+        self.resend_buf = collections.deque()
+        self.resend_buf_len = 0
 
         self.status_cb = status_cb
         self.connected = True
@@ -199,9 +203,31 @@ class LatchStreamer:
                     raise Exception("fatal error :(")
 
                 # but if it's not, we will restart transmission at the last
-                # position the device got, so it can pick the stream back up
-                # before a part got lost due to an error.
-                raise Exception("actually do that")
+                # position the device got so it can pick the stream back up.
+
+                # how many latches do we need to resend to get the device back
+                # to the position we are at?
+                num_to_resend = (self.stream_pos - p_stream_pos) & 0xFFFF
+                # pull that many out of the resend buffer
+                to_resend = []
+                self.resend_buf_len -= num_to_resend
+                # we will be sending that many back out
+                self.latch_queue_len += num_to_resend
+                # because the resend buffer contains whole packets and the
+                # device can only lose whole packets, we can just move packets
+                while num_to_resend > 0:
+                    packet = self.resend_buf.pop() # pop latest transmission
+                    # turn it from bytes back into a numpy array
+                    packet = np.frombuffer(packet,
+                        dtype=np.uint16).reshape(-1, 5)
+                    to_resend.append(packet)
+                    num_to_resend -= len(packet)
+                # put what we pulled out back into the send queue. to_resend is
+                # from most recently to least recently transmitted so the
+                # packets end up least recently to most recently transmitted.
+                self.latch_queue.extendleft(to_resend)
+                # finally set the correct stream position
+                self.stream_pos = p_stream_pos
 
             # the device us tells us how many latches it's received and we know
             # how many we've sent. the difference is the number in transit.
@@ -220,7 +246,7 @@ class LatchStreamer:
             status_cb(msg)
 
             # queue that many for transmission
-            while actual_buffer_space > 0:
+            while actual_buffer_space >= 20:
                 # we'd like to send at least 20 latches to avoid too much packet
                 # overhead, but not more than 200 to avoid having to resend a
                 # lot of latches if there is an error. but of course, we can't
@@ -229,7 +255,7 @@ class LatchStreamer:
 
                 latch_data = []
                 num_sent = 0
-                while num_sent < min(20, send_max):
+                while num_sent < 20:
                     try:
                         more_latches = self.latch_queue.popleft()
                     except IndexError:
@@ -270,6 +296,25 @@ class LatchStreamer:
                 # and advanced the stream position
                 self.stream_pos = (self.stream_pos + num_sent) & 0xFFFF
 
+                # remember what data we sent so we can resend it if necessary
+                self.resend_buf.append(latch_data)
+                self.resend_buf_len += num_sent
+
+                # clear out old sent data. we never have in transit more latches
+                # than can be stored in the device buffer, so that is the
+                # maximum number that we can fail to send and need to resend.
+                while True:
+                    # how many latches would be left if we removed the oldest?
+                    oldest_len = len(self.resend_buf[0])//10
+                    remaining = self.resend_buf_len - oldest_len
+                    # is that more than we could possibly need to resend?
+                    if remaining <= LATCH_BUF_SIZE:
+                        break # nope, don't do anything
+                    # yup, so remove it
+                    self.resend_buf.popleft()
+                    self.resend_buf_len -= oldest_len
+
+
         # send out the data we prepared earlier
         while True:
             # get a new chunk
@@ -305,6 +350,7 @@ class LatchStreamer:
         del self.out_chunks
         del self.out_curr_chunk
         del self.in_chunks
+        del self.resend_buf
         del self.status_cb
 
         self.connected = False
