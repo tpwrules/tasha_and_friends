@@ -13,9 +13,6 @@ from .apu_calc import calculate_counter
 # 0x0: (R) Did Latch / (W) Force Latch
 #    Read: bit  0: 1 if a latch event occurred since acknowledge, 0 if not
 #   Write:   15-0: write anything to force a latch event
-#   A latch event is forced by setting the latch line to 0 for one cycle. This
-#   caues a falling edge, if the console is not already holding it low. If it
-#   is, then the latch force has no effect.
 
 # 0x1: (R) Missed Latch & Acknowledge
 #    Read: bit  0: 1 if a latch event was missed, 0 if not
@@ -123,7 +120,7 @@ class Controllers(Elaboratable):
         latched = Signal()
         prev_latch = Signal()
         m.d.sync += prev_latch.eq(i_latch)
-        m.d.comb += latched.eq(prev_latch & ~i_latch & ~self.i_force_latch)
+        m.d.comb += latched.eq((prev_latch & ~i_latch) | self.i_force_latch)
         # tell others the latch status
         m.d.comb += self.o_latched.eq(latched)
 
