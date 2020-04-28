@@ -179,22 +179,36 @@ class SNES(Elaboratable):
         # drive the APU clock
         apu_clockgen = DomainRenamer("apu")(self.apu_clockgen)
         m.submodules.apu_clockgen = apu_clockgen
-        # default to the stock BSNES frequency since that's theoretically what
-        # the TASes are designed for (even though it's not that useful)
-        apu_counter = Signal(24, reset=calculate_counter(24.607104)[0])
-        apu_jitter = Signal(3)
-        apu_jitter_mode = Signal()
-        apu_polarity = Signal()
-        # latch in new frequency
+        # we default to the stock BSNES frequency since that's theoretically
+        # what the TASes are designed for (even though it's not that useful)
+
+        # APU frequency registers set on the boneless bus
+        ar_counter = Signal(24, reset=calculate_counter(24.607104)[0])
+        ar_jitter = Signal(3)
+        ar_jitter_mode = Signal()
+        ar_polarity = Signal()
+
+        # current values, latched from registers
+        ac_counter = Signal(24, reset=calculate_counter(24.607104)[0])
+        ac_jitter = Signal(3)
+        ac_jitter_mode = Signal()
+        ac_polarity = Signal()
+
+        # latch in new frequency with latch signal
         with m.If(self.controllers.o_latched):
             m.d.sync += [
-                apu_clockgen.i_counter.eq(apu_counter),
-                apu_clockgen.i_jitter.eq(apu_jitter),
-                apu_clockgen.i_jitter_mode.eq(apu_jitter_mode),
-                apu_clockgen.i_polarity.eq(apu_polarity),
+                ac_counter.eq(ar_counter),
+                ac_jitter.eq(ar_jitter),
+                ac_jitter_mode.eq(ar_jitter_mode),
+                ac_polarity.eq(ar_polarity),
             ]
 
         m.d.comb += [
+            apu_clockgen.i_counter.eq(ac_counter),
+            apu_clockgen.i_jitter.eq(ac_jitter),
+            apu_clockgen.i_jitter_mode.eq(ac_jitter_mode),
+            apu_clockgen.i_polarity.eq(ac_polarity),
+
             self.snes_signals.o_apu_ddr_clk.eq(apu_clockgen.o_apu_ddr_clk),
             self.snes_signals.o_apu_ddr_lo.eq(apu_clockgen.o_apu_ddr_lo),
             self.snes_signals.o_apu_ddr_hi.eq(apu_clockgen.o_apu_ddr_hi),
@@ -222,14 +236,14 @@ class SNES(Elaboratable):
                 with m.Case(0): # force a latch
                     m.d.comb += controllers.i_force_latch.eq(1)
                 with m.Case(2): # basic APU frequency adjust
-                    m.d.sync += apu_counter[4:-4].eq(self.i_wdata)
+                    m.d.sync += ar_counter[4:-4].eq(self.i_wdata)
                 with m.Case(3): # advanced APU frequency adjust
                     m.d.sync += [
-                        apu_polarity.eq(self.i_wdata[15]),
-                        apu_jitter_mode.eq(self.i_wdata[14]),
-                        apu_jitter.eq(self.i_wdata[8:11]),
-                        apu_counter[-4:].eq(self.i_wdata[4:8]),
-                        apu_counter[:4].eq(self.i_wdata[0:4]),
+                        ar_polarity.eq(self.i_wdata[15]),
+                        ar_jitter_mode.eq(self.i_wdata[14]),
+                        ar_jitter.eq(self.i_wdata[8:11]),
+                        ar_counter[-4:].eq(self.i_wdata[4:8]),
+                        ar_counter[:4].eq(self.i_wdata[0:4]),
                     ]
                 with m.Case(0x4):
                     m.d.sync += controllers.i_buttons["p1d0"].eq(self.i_wdata)
