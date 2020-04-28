@@ -23,6 +23,26 @@ from .apu_calc import calculate_counter
 #   was 1. Reading this register acknowledges the latch by clearing both Did
 #   Latch and Missed Latch.
 
+# APU frequency adjustment registers. Consult apu_clockgen.py for the complete
+# explanation and limitations of the registers.
+
+# 0x2: (W) APU frequency adjust (basic)
+#   Write:   15-0: middle 16 bits of the 24 bit APU frequency counter
+#   This register controls the middle bits of the frequency counter to provide a
+#   reasonable range of adjustment. In most cases, register 3 can be left alone
+#   and only register 2 needs to be updated. When a latch event occurs, this
+#   register is transferred to the APU clock generator.
+
+# 0x3: (W) APU frequency adjust (advanced)
+#   Write: bit 15: output polarity (0 = drop high pulses, 1 = drop low pulses)
+#          bit 14: jitter mode (0 = advance LFSR every cycle, 1 = every drop)
+#            10-8: jitter amount (0 = no, 7 = up to 127 cycles)
+#             7-4: high 4 bits of frequency counter (for very low frequencies)
+#             3-0: low 4 bits of frequency counter (for fine frequency adjust)
+#   This register provides advanced controls for the APU clock generator. In
+#   most cases, register 3 can be left alone and only register 2 needs to be
+#   updated. When a latch event occurs, this register is transferred to the APU
+#   clock generator.
 
 # CONTROLLER BUTTON REGISTERS: bit 15 to bit 0, 1 if pressed: BYsSudlrAXLR1234
 # 0x4: player 1 data 0 buttons
@@ -159,13 +179,20 @@ class SNES(Elaboratable):
         # drive the APU clock
         apu_clockgen = DomainRenamer("apu")(self.apu_clockgen)
         m.submodules.apu_clockgen = apu_clockgen
-        # some defaults for testing
-        m.d.comb += [
-            apu_clockgen.i_counter.eq(calculate_counter(24.607104)[0]),
-            apu_clockgen.i_jitter.eq(0),
-            apu_clockgen.i_jitter_mode.eq(0),
-            apu_clockgen.i_polarity.eq(0),
-        ]
+        # default to the stock BSNES frequency since that's theoretically what
+        # the TASes are designed for (even though it's not that useful)
+        apu_counter = Signal(24, reset=calculate_counter(24.607104)[0])
+        apu_jitter = Signal(3)
+        apu_jitter_mode = Signal()
+        apu_polarity = Signal()
+        # latch in new frequency
+        with m.If(self.controllers.o_latched):
+            m.d.sync += [
+                apu_clockgen.i_counter.eq(apu_counter),
+                apu_clockgen.i_jitter.eq(apu_jitter),
+                apu_clockgen.i_jitter_mode.eq(apu_jitter_mode),
+                apu_clockgen.i_polarity.eq(apu_polarity),
+            ]
 
         m.d.comb += [
             self.snes_signals.o_apu_ddr_clk.eq(apu_clockgen.o_apu_ddr_clk),
@@ -194,6 +221,16 @@ class SNES(Elaboratable):
             with m.Switch(self.i_addr[:3]):
                 with m.Case(0): # force a latch
                     m.d.comb += controllers.i_force_latch.eq(1)
+                with m.Case(2): # basic APU frequency adjust
+                    m.d.sync += apu_counter[4:-4].eq(self.i_wdata)
+                with m.Case(3): # advanced APU frequency adjust
+                    m.d.sync += [
+                        apu_polarity.eq(self.i_wdata[15]),
+                        apu_jitter_mode.eq(self.i_wdata[14]),
+                        apu_jitter.eq(self.i_wdata[8:11]),
+                        apu_counter[-4:].eq(self.i_wdata[4:8]),
+                        apu_counter[:4].eq(self.i_wdata[0:4]),
+                    ]
                 with m.Case(0x4):
                     m.d.sync += controllers.i_buttons["p1d0"].eq(self.i_wdata)
                 with m.Case(0x5):
