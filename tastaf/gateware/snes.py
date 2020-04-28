@@ -5,6 +5,8 @@ from nmigen.asserts import Past, Rose, Fell
 from nmigen.lib.cdc import FFSynchronizer
 
 from .setreset import *
+from .apu_clockgen import APUClockgen
+from .apu_calc import calculate_counter
 
 # Register Map
 
@@ -136,6 +138,7 @@ class SNES(Elaboratable):
         self.i_wdata = Signal(16)
 
         self.controllers = Controllers(self.snes_signals)
+        self.apu_clockgen = APUClockgen()
     
     def elaborate(self, platform):
         m = Module()
@@ -151,6 +154,23 @@ class SNES(Elaboratable):
         m.d.comb += [
             did_latch.set.eq(self.controllers.o_latched),
             missed_latch.set.eq(did_latch.value & self.controllers.o_latched),
+        ]
+
+        # drive the APU clock
+        apu_clockgen = DomainRenamer("apu")(self.apu_clockgen)
+        m.submodules.apu_clockgen = apu_clockgen
+        # some defaults for testing
+        m.d.comb += [
+            apu_clockgen.i_counter.eq(calculate_counter(24.607104)[0]),
+            apu_clockgen.i_jitter.eq(0),
+            apu_clockgen.i_jitter_mode.eq(0),
+            apu_clockgen.i_polarity.eq(0),
+        ]
+
+        m.d.comb += [
+            self.snes_signals.o_apu_ddr_clk.eq(apu_clockgen.o_apu_ddr_clk),
+            self.snes_signals.o_apu_ddr_lo.eq(apu_clockgen.o_apu_ddr_lo),
+            self.snes_signals.o_apu_ddr_hi.eq(apu_clockgen.o_apu_ddr_hi),
         ]
 
         # handle the boneless bus.
