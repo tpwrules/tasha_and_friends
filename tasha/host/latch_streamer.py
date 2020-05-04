@@ -8,6 +8,19 @@
 #   Column 3: player 2 data 1
 #   Column 4: APU frequency control word
 
+# LATCH STREAMER SETTINGS (parameters to the __init__)
+
+# already_latching: Assume the console is already latching before the program
+#   starts. This has two effects: once the program starts, it clears pending
+#   latches from the hardware, and does not force a latch. This eliminates
+#   "missed latch" errors, with the caveat that the data the console gets before
+#   the program starts (and the first latch after it starts) is undefined.
+
+# num_priming_latches: Configure the number of latches to download with the
+#   firmware. These latches must tide the firmware over until communication is
+#   reestablished and a status packet can be sent. It may be necessary to
+#   increase this when already_latching is set.
+
 import struct
 import random
 import collections
@@ -34,7 +47,13 @@ error_codes = {
 }
 
 class LatchStreamer:
-    def __init__(self):
+    def __init__(self,
+            already_latching=False,
+            num_priming_latches=100):
+        self.already_latching = already_latching
+        # we can't pre-fill the buffer with more latches than fit in it
+        self.num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE-1)
+
         self.connected = False
         self.latch_queue = collections.deque()
         # the queue is composed of arrays with many latches in each. keep track
@@ -84,12 +103,14 @@ class LatchStreamer:
         # get the first entry in the queue
         first = self.latch_queue.popleft()
         # pull some latches off it and save the remainder
-        priming_latches, first = first[:100], first[100:]
+        npl = self.num_priming_latches
+        priming_latches, first = first[:npl], first[npl:]
         # if there are any left, stick them back where we got them
         self.latch_queue.appendleft(first)
         self.latch_queue_len -= len(priming_latches)
 
-        firmware = make_firmware(priming_latches.reshape(-1))
+        firmware = make_firmware(priming_latches.reshape(-1),
+            already_latching=self.already_latching)
 
         status_cb("Connecting to TASHA...")
         bootloader = bootload.Bootloader()

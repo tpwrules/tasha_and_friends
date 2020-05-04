@@ -651,7 +651,8 @@ def main_loop_body():
 # only need one latch that we can put in the interface at the very start. just
 # sticking it in the buffer to begin with avoids special-casing that latch, and
 # the extra is nice to jumpstart the buffer.
-def make_firmware(priming_latches=[]):
+def make_firmware(priming_latches=[],
+        already_latching=False):
     num_priming_latches = len(priming_latches)//5
     if len(priming_latches) % 5 != 0:
         raise ValueError("priming latches must have 5 words per latch")
@@ -675,11 +676,26 @@ def make_firmware(priming_latches=[]):
         # same timeout for the status timer, just cause it's already in the
         # register. once it expires, the correct value will be loaded.
         STXA(R0, p_map.timer.timer[0].w_value),
-        # write something to force a latch so the first latch makes its way into
-        # the interface
-        STXA(R0, p_map.snes.w_force_latch),
-        J("main_loop")
     ]
+
+    if already_latching:
+        # clear the latch state so there won't immediately be an error if some
+        # latches happened before we started.
+        fw.append([
+            LDXA(R1, p_map.snes.r_missed_latch_and_ack),
+        ])
+    else:
+        fw.append([
+            # write something to force a latch so the first latch makes its way
+            # into the interface. if we are already latching, we let the console
+            # do this. the console will get junk the first latch, but it already
+            # got junk the latches before so whatever.
+            STXA(R0, p_map.snes.w_force_latch),
+        ])
+
+    fw.append([
+        J("main_loop")
+    ])
 
     fw.append(send_status_packet())
     # run the main loop
@@ -712,7 +728,7 @@ def make_firmware(priming_latches=[]):
         raise ValueError(
             "firmware length {} is over max of {} by {} words".format(
                 fw_len, FW_MAX_LENGTH, fw_len-FW_MAX_LENGTH))
-    elif True:
+    elif False:
         print("firmware length {} is under max of {} by {} words".format(
             fw_len, FW_MAX_LENGTH, FW_MAX_LENGTH-fw_len))
 
