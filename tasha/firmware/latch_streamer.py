@@ -107,25 +107,25 @@ class ErrorCode(IntEnum):
     MISSED_LATCH = 0x41
 
 # MEMORY MAP
-# We have a 16K word RAM into which we have to fit all the code, buffers, and
+# We have a 32K word RAM into which we have to fit all the code, buffers, and
 # register windows. We need as large a buffer as possible. We don't bother with
 # write protection since the system can just be reset and the application can be
 # redownloaded in the event of any corruption.
 
 # Address     | Size  | Purpose
 # ------------+-------+--------------------------------
-# 0x0000-03BF | 960   | Code and variables
-# 0x03C0-03FF | 64    | Register windows (8x)
-# 0x0400-3FFF | 15360 | Latch buffer
+# 0x0000-01BF | 448   | Code and variables
+# 0x01C0-01FF | 64    | Register windows (8x)
+# 0x0200-7FFF | 32256 | Latch buffer
 
-# we want the latch buffer to be a multiple of 5 words, which, conveniently, it
-# naturally is.
-LATCH_BUF_START = 0x400
-LATCH_BUF_END = 0x4000
+# we want the latch buffer to be a multiple of 5 words so it can hold an integer
+# number of latches
+LATCH_BUF_START = 0x200
+LATCH_BUF_END = 0x8000
 LATCH_BUF_SIZE = (LATCH_BUF_END-LATCH_BUF_START)//5
 
-FW_MAX_LENGTH = 0x3C0
-INITIAL_REGISTER_WINDOW = 0x3F8
+FW_MAX_LENGTH = 0x1C0
+INITIAL_REGISTER_WINDOW = 0x1F8
 
 # variable number in the "vars" array. we don't bother giving variables
 # individual labels because loading a variable from a label requires a register

@@ -90,7 +90,7 @@ class Top(Elaboratable):
         # now we need to hook up memory. since the available memories can vary
         # depending on the FPGA, we're just given the bus and we have to put
         # something there. it's no coincidence that the bus is set up precisely
-        # for one ice40 SPRAM block. note that we have to create a clock domain
+        # for two ice40 SPRAM blocks. note that we have to create a clock domain
         # based on the provided bus clock
         mem_clock = Signal()
         mem_reset = Signal()
@@ -101,20 +101,45 @@ class Top(Elaboratable):
             ResetSignal("top_mem").eq(mem_reset), # already synced to clock
         ]
 
-        mem = DomainRenamer("top_mem")(SPRAM())
-        m.submodules += mem
+        mem_lo = DomainRenamer("top_mem")(SPRAM())
+        mem_hi = DomainRenamer("top_mem")(SPRAM())
+        m.submodules.mem_lo = mem_lo
+        m.submodules.mem_hi = mem_hi
+
+        mem_we = Signal()
+        mem_re = Signal()
+        mem_i_data = Signal(16)
+        mem_o_data = Signal(16)
+        mem_i_addr = Signal(15)
+
+        last_mem = Signal()
+        m.d.sync += last_mem.eq(mem_i_addr[-1] == 1)
+
+        m.d.comb += [
+            mem_lo.i_addr.eq(mem_i_addr[:14]),
+            mem_hi.i_addr.eq(mem_i_addr[:14]),
+
+            mem_lo.i_re.eq(mem_re & (mem_i_addr[-1] == 0)),
+            mem_hi.i_re.eq(mem_re & (mem_i_addr[-1] == 1)),
+            mem_o_data.eq(Mux(last_mem, mem_hi.o_data, mem_lo.o_data)),
+
+            mem_lo.i_we.eq(mem_we & (mem_i_addr[-1] == 0)),
+            mem_hi.i_we.eq(mem_we & (mem_i_addr[-1] == 1)),
+            mem_lo.i_data.eq(mem_i_data),
+            mem_hi.i_data.eq(mem_i_data),
+        ]
 
         memory_signals = MemorySignals(
             o_clock=mem_clock,
-            o_reset = mem_reset,
+            o_reset=mem_reset,
 
-            o_addr=mem.i_addr,
+            o_addr=mem_i_addr,
 
-            o_re=mem.i_re,
-            i_rdata=mem.o_data,
+            o_re=mem_re,
+            i_rdata=mem_o_data,
 
-            o_we=mem.i_we,
-            o_wdata=mem.i_data,
+            o_we=mem_we,
+            o_wdata=mem_i_data,
         )
 
         # finally we can hook this all up to the system shell

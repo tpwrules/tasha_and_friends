@@ -40,7 +40,7 @@ MemorySignals = namedtuple("MemorySignals", [
     "o_clock", # clock that the other signals are synchronous to
     "o_reset", # active high reset synchronous to the clock,
 
-    "o_addr", # address, 14 bits wide
+    "o_addr", # address, 15 bits wide
 
     "o_re", # when asserted, data must be available next cycle
     "i_rdata", # read data, 16 bits wide
