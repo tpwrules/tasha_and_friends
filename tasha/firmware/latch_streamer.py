@@ -525,15 +525,25 @@ def main_loop_body():
         MOVI(r.temp, 0xFFFF),
         STXA(r.temp, p_map.uart.w_error_clear),
 
-        MOVI(r.comm_word, 0),
+        # wait for the low header byte 0x5A. if we time out here, we just wait
+        # some more.
+        MOVR(r.lr, "rx_header_lo"),
     L("rx_header_lo"),
-        # receive one high byte, which we expect to be the header low byte 0x5A
-        JAL(r.rxlr, lp+"rx_comm_byte_hi"),
-        # keep the interface full
-        JAL(r.lr, "update_interface"),
-        CMPI(r.comm_word, 0x5A << 8),
-        BNE("rx_header_lo"),
+        LDXA(r.temp, p_map.uart.r_error),
+        CMPI(r.temp, 2),
+        BEQ("main_loop"),
+        AND(r.temp, r.temp, r.temp),
+        BZ0(lp+"rcw_error"),
+        
+        # receive the byte and go complain if it doesn't match
+        LDXA(r.comm_word, p_map.uart.r_rx_hi),
+        ADD(r.comm_word, r.comm_word, r.comm_word),
+        BC1("update_interface"), # update the interface if nothing's come yet
 
+        CMPI(r.comm_word, 0x5A << 8),
+        BNE(lp+"header_bad"),
+
+        MOVI(r.comm_word, 0),
     L("rx_header_hi"),
         # now receive the actual high byte 0x7A
         JAL(r.rxlr, lp+"rx_comm_byte_hi"),
@@ -542,9 +552,9 @@ def main_loop_body():
         # if we actually received the low byte, look for the high byte again
         CMPI(r.comm_word, 0x5A << 8),
         BEQ("rx_header_hi"),
-        # if we didn't receive the high byte, look for the low byte again
+        # if we didn't receive the high byte, go complain
         CMPI(r.comm_word, 0x7A << 8),
-        BNE("rx_header_lo"),
+        BNE(lp+"header_bad"),
 
         # we have confirmed both header bytes. who knows what the CRC is now.
         STXA(r.temp, p_map.uart.w_crc_reset), # write something to reset it
@@ -578,6 +588,10 @@ def main_loop_body():
     L(lp+"crc_bad"),
         # aw heck, it didn't go okay. send the appropriate error.
         MOVI(r.error_code, ErrorCode.BAD_CRC),
+        J("handle_error"),
+
+    L(lp+"header_bad"),
+        MOVI(r.error_code, ErrorCode.INVALID_COMMAND),
         J("handle_error"),
 
     L(lp+"crc_ok"),
@@ -663,10 +677,11 @@ def main_loop_body():
     r += "R5:error_code"
     fw.append([
     L(lp+"rcw_error"),
+        # assume it was a timeout error
+        MOVI(r.error_code, ErrorCode.RX_TIMEOUT),
         # was it a timeout error?
         ANDI(r.comm_word, r.temp, 2),
-        # we ignore those when receiving commands and just reset the reception
-        BZ0("main_loop"), # it was
+        BZ0("handle_error"), # it was. go deal with it
         # otherwise, it must have been a framing error
         MOVI(r.error_code, ErrorCode.RX_ERROR),
         # go deal with it
