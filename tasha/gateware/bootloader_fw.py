@@ -87,7 +87,7 @@ from .periph_map import p_map
 # bootloader gets the rest to store the version. The host verifies the
 # bootloader version and gives the rest of the info words to the host
 # application.
-BOOTLOADER_VERSION = 3
+BOOTLOADER_VERSION = 4
 
 # very, very temporary. will eventually be automatically detected and managed
 # somehow
@@ -121,8 +121,6 @@ def make_bootloader(info_words):
     cleaned_info_words.append(0)
     cleaned_info_words.append(GATEWARE_VERSION)
     cleaned_info_words.append(BOOTLOADER_VERSION)
-
-    FW_MAX_LEN = 184
 
     fw = [
     L("reset"),
@@ -375,7 +373,7 @@ def make_bootloader(info_words):
             fw_len, FW_MAX_LENGTH, FW_MAX_LENGTH-fw_len))
 
     # pad the code region out to line up the info words
-    assembled_fw.extend([0]*(184-fw_len))
+    assembled_fw.extend([0]*(FW_MAX_LENGTH-fw_len))
 
     # glue on the info words
     assembled_fw.extend(cleaned_info_words)
