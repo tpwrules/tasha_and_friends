@@ -124,12 +124,7 @@ class LatchStreamer:
             status_cb("    (no response, please reset TASHA)")
             bootloader.connect(port, timeout=None)
 
-        status_cb("Reading information...")
-        info_words = bootloader.read_memory(bootload.ROM_INFO_WORDS, 8)
-        if info_words[-1] != bootload.BOOTLOADER_VERSION:
-            raise bootload.BootloadError("wrong bootloader version {} "
-                "(expected {})".format(info_words[-1],
-                    bootload.BOOTLOADER_VERSION))
+        bootloader.identify()
 
         status_cb("Downloading and verifying application...")
         firmware = tuple(firmware)
@@ -138,10 +133,8 @@ class LatchStreamer:
         if firmware != read_firmware:
             raise bootload.BootloadError("verification failed")
 
-        status_cb("Starting application...")
-        bootloader.start_execution(0)
-
         status_cb("Connecting to application...")
+        bootloader.start_execution(0)
         self.port = serial.Serial(port=port, baudrate=2_000_000, timeout=0.001)
 
         # wait until we get a valid status packet

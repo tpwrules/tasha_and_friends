@@ -116,6 +116,17 @@ class Bootloader:
             self.port = None # we did not actually connect
             raise
 
+    # read the info words, verify the bootloader-specific bits, then return the
+    # rest to the user
+    def identify(self):
+        info_words = self.read_memory(ROM_INFO_WORDS, 8)
+        if info_words[-1] != BOOTLOADER_VERSION:
+            raise BootloadError("wrong bootloader version {} "
+                "(expected {})".format(
+                info_words[-1], BOOTLOADER_VERSION))
+
+        return info_words[:7]
+
     # read "length" words from the target starting at "addr"
     def read_memory(self, addr, length):
         # send the read command first
@@ -178,13 +189,9 @@ def do_bootload(port, program):
         print("    (board is unresponsive, please reset it)")
         bootloader.connect(port, timeout=None)
 
-    print("Connected!")
+    bootloader.identify()
 
-    print("Reading info...")
-    info_words = bootloader.read_memory(ROM_INFO_WORDS, 8)
-    if info_words[-1] != BOOTLOADER_VERSION:
-        raise BootloadError("wrong bootloader version {} (expected {})".format(
-            info_words[-1], BOOTLOADER_VERSION))
+    print("Connected!")
 
     print("Downloading program...")
     bootloader.write_memory(0, program)
