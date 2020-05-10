@@ -26,7 +26,7 @@ class TASHACore(Elaboratable):
         # we can store seven info words that the PC bootload script will read
         # and give to the PC application. eventually we may do some sort of
         # capability list, but for now it's empty. 
-        self.bootrom_data = make_bootloader([0]*7)
+        self.bootrom_data = make_bootloader([0]*4)
 
         # the main CPU. configured to start in the boot ROM.
         self.cpu_core = CoreFSM(alsru_cls=ALSRU_4LUT,

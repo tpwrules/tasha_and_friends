@@ -7,7 +7,8 @@ import struct
 import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 
-from ..gateware.bootloader_fw import ROM_INFO_WORDS, BOOTLOADER_VERSION
+from ..gateware.bootloader_fw import (
+    ROM_INFO_WORDS, BOOTLOADER_VERSION, GATEWARE_VERSION)
 
 class BootloadError(Exception): pass
 
@@ -120,12 +121,17 @@ class Bootloader:
     # rest to the user
     def identify(self):
         info_words = self.read_memory(ROM_INFO_WORDS, 8)
-        if info_words[-1] != BOOTLOADER_VERSION:
+        if info_words[7] != BOOTLOADER_VERSION:
             raise BootloadError("wrong bootloader version {} "
                 "(expected {})".format(
-                info_words[-1], BOOTLOADER_VERSION))
+                info_words[7], BOOTLOADER_VERSION))
 
-        return info_words[:7]
+        if info_words[6] != GATEWARE_VERSION:
+            raise BootloadError("wrong gateware version {} "
+                "(expected {})".format(
+                info_words[6], GATEWARE_VERSION))
+
+        return info_words[:4]
 
     # read "length" words from the target starting at "addr"
     def read_memory(self, addr, length):

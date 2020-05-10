@@ -83,10 +83,16 @@ from ..firmware.bonetools import *
 from .periph_map import p_map
 
 # INFO WORDS
-# The gateware gets to store seven 16-bit words as information about itself. The
-# bootloader gets the 8th to store the version. The host verifies the bootloader
-# version and gives the rest of the info words to the host application.
+# The gateware gets to store four 16-bit words as information about itself. The
+# bootloader gets the rest to store the version. The host verifies the
+# bootloader version and gives the rest of the info words to the host
+# application.
 BOOTLOADER_VERSION = 3
+
+# very, very temporary. will eventually be automatically detected and managed
+# somehow
+GATEWARE_VERSION = 1
+
 
 # MEMORY MAP
 # We have a 256 word memory into which we have to fit all the code, buffers, and
@@ -109,8 +115,11 @@ RAM_PACKET_BUFFER = 0xFFC0
 
 def make_bootloader(info_words):
     cleaned_info_words = [int(info_word) & 0xFFFF for info_word in info_words]
-    if len(cleaned_info_words) != 7:
-        raise ValueError("expected exactly seven info words")
+    if len(cleaned_info_words) != 4:
+        raise ValueError("expected exactly four info words")
+    cleaned_info_words.append(0)
+    cleaned_info_words.append(0)
+    cleaned_info_words.append(GATEWARE_VERSION)
     cleaned_info_words.append(BOOTLOADER_VERSION)
 
     FW_MAX_LEN = 184
