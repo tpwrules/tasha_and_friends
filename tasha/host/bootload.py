@@ -7,7 +7,7 @@ import struct
 import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 
-from .bootloader_fw import ROM_INFO_WORDS, BOOTLOADER_VERSION
+from ..gateware.bootloader_fw import ROM_INFO_WORDS, BOOTLOADER_VERSION
 
 class BootloadError(Exception): pass
 

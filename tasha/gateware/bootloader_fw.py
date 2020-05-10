@@ -78,9 +78,9 @@ import random
 
 from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
-from .bonetools import *
+from ..firmware.bonetools import *
 
-from ..gateware.periph_map import p_map
+from .periph_map import p_map
 
 # INFO WORDS
 # The gateware gets to store seven 16-bit words as information about itself. The

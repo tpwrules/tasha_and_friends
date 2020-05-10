@@ -32,7 +32,7 @@ import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 
 from ..firmware.latch_streamer import make_firmware, LATCH_BUF_SIZE
-from ..firmware import bootload
+from . import bootload
 
 # todo: gross
 error_codes = {

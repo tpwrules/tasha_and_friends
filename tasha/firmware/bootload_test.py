@@ -4,7 +4,7 @@ from boneless.arch.opcode import Instr
 from boneless.arch.opcode import *
 
 from ..gateware.periph_map import p_map
-from .bootload import do_bootload
+from ..host.bootload import do_bootload
 
 # test program to confirm things are working
 fw = [

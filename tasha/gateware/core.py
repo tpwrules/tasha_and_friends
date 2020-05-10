@@ -9,7 +9,7 @@ from boneless.arch.opcode import *
 
 from . import reset_req, uart, timer, snes
 from .periph_map import p_map
-from ..firmware.bootloader_fw import make_bootloader
+from .bootloader_fw import make_bootloader
 
 class TASHACore(Elaboratable):
     def __init__(self, snes_signals, uart_signals, memory_signals):

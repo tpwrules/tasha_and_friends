@@ -40,7 +40,7 @@ from ..gateware.apu_calc import calculate_advanced
 
 # first, we need to load the firmware to do it
 from ..firmware.set_freq import make_firmware
-from ..firmware.bootload import do_bootload
+from .bootload import do_bootload
 
 print("Downloading firmware...")
 do_bootload(sys.argv[1], make_firmware())
