@@ -41,30 +41,32 @@
 # position sent in the error packet.
 
 # playback command packet format:
-# first word: command
+# first word: header (always 0x7A5A)
+# second word: command
 #   bits 7-0: number of parameters, always 3 for the playback system's commands
 #   bits 15-8: command number, defined later
-# second word: parameter 1 (command specific)
-# third word: parameter 2 (command specific)
-# fourth word: parameter 3 (command specific)
-# fifth word: CRC of previous words
+# third word: parameter 1 (command specific)
+# fourth word: parameter 2 (command specific)
+# fifth word: parameter 3 (command specific)
+# sixth word: CRC of previous words (except first)
 
 # Note: also accepts the bootloader hello command (command number 1 with 2
 # unused parameters)
 
 # playback status packet format
-# first word: result
+# first word: header (always 0x7A5A)
+# second word: result
 #   bits 7-0: number of parameters, always 3 for the playback system's responses
 #   bits 15-8: result code, always 0x10 for the playback system's responses
-# second word: last error:
+# third word: last error:
 #              REGULAR ERRORS
 #              0x00=no error, 0x01=invalid command, 0x02=bad CRC, 0x03=RX error,
 #              0x04=RX timeout
 #              FATAL ERRORS (playback must be restarted)
 #              0x40=buffer underrun, 0x41=missed latch
-#  third word: stream position
-# fourth word: buffer space remaining
-#  fifth word: CRC of previous words
+#  fourth word: stream position
+# fifth word: buffer space remaining
+#  sixth word: CRC of previous words (except first)
 
 # commands
 # command 0x10: send latches
@@ -278,7 +280,11 @@ def send_status_packet():
         LD(r.stream_pos, r.vars, Vars.stream_pos),
         LD(r.last_error, r.vars, Vars.last_error),
 
-        # reset the UART CRC
+        # send the header first
+        MOVI(r.comm_word, 0x7A5A),
+        JAL(r.txlr, lp+"tx_comm_word"),
+
+        # then reset the UART CRC
         STXA(r.temp, p_map.uart.w_crc_reset), # we can write anything
 
         MOVI(r.comm_word, 0x1003),
@@ -518,8 +524,30 @@ def main_loop_body():
         # clear any UART errors and reset the receive timeout
         MOVI(r.temp, 0xFFFF),
         STXA(r.temp, p_map.uart.w_error_clear),
-        # reset the CRC engine
-        STXA(r.temp, p_map.uart.w_crc_reset), # we can write anything
+
+        MOVI(r.comm_word, 0),
+    L("rx_header_lo"),
+        # receive one high byte, which we expect to be the header low byte 0x5A
+        JAL(r.rxlr, lp+"rx_comm_byte_hi"),
+        # keep the interface full
+        JAL(r.lr, "update_interface"),
+        CMPI(r.comm_word, 0x5A << 8),
+        BNE("rx_header_lo"),
+
+    L("rx_header_hi"),
+        # now receive the actual high byte 0x7A
+        JAL(r.rxlr, lp+"rx_comm_byte_hi"),
+        # keep the interface full
+        JAL(r.lr, "update_interface"),
+        # if we actually received the low byte, look for the high byte again
+        CMPI(r.comm_word, 0x5A << 8),
+        BEQ("rx_header_hi"),
+        # if we didn't receive the high byte, look for the low byte again
+        CMPI(r.comm_word, 0x7A << 8),
+        BNE("rx_header_lo"),
+
+        # we have confirmed both header bytes. who knows what the CRC is now.
+        STXA(r.temp, p_map.uart.w_crc_reset), # write something to reset it
 
         # receive the command packet
         JAL(r.rxlr, lp+"rx_comm_word"),
@@ -614,6 +642,7 @@ def main_loop_body():
         BS1("update_interface"),
         # we have the low byte in comm_word
 
+    L(lp+"rx_comm_byte_hi"),
         MOVR(r.lr, lp+"rcw_hi"),
     L(lp+"rcw_hi"),
         # check again for UART errors

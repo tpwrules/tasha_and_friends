@@ -48,7 +48,7 @@ class Bootloader:
             raise BootloadError("not connected to target")
 
         # command is always length 2
-        cmd_words = [(command << 8) + 2, param1, param2]
+        cmd_words = [0x7A5A, (command << 8) + 2, param1, param2]
         cmd_bytes = struct.pack("<{}H".format(len(cmd_words)), *cmd_words)
 
         # reset the buffers to get rid of any junk from previous (perhaps
@@ -57,33 +57,34 @@ class Bootloader:
         self.port.reset_output_buffer()
 
         self._ser_write(cmd_bytes)
+        # header word 0x7A5A does not get CRCd
         self._ser_write(
-            crc_16_kermit(cmd_bytes).to_bytes(2, byteorder="little"))
+            crc_16_kermit(cmd_bytes[2:]).to_bytes(2, byteorder="little"))
 
     def _check_response(self):
         if self.port is None:
             raise BootloadError("not connected to target")
 
-        resp_bytes = self._ser_read(6)
+        resp_bytes = self._ser_read(8)
         # the last bytes of the response are the response's CRC. if we CRC those
         # too, then we will get a CRC of 0 if everything is correct.
-        crc = crc_16_kermit(resp_bytes)
+        crc = crc_16_kermit(resp_bytes[2:])
         if crc != 0:
             raise BadCRC(crc)
 
-        resp_words = struct.unpack("<3H", resp_bytes)
-        if resp_words[0] != 0x0101:
+        resp_words = struct.unpack("<4H", resp_bytes)
+        if resp_words[0] != 0x7A5A or resp_words[1] != 0x0101:
             raise BootloadError("unexpected response word 0x{:04X}".format(
                 resp_words[0]))
 
-        if resp_words[1] == 3: # success
+        if resp_words[2] == 3: # success
             return
 
-        if resp_words[1] == 2:
+        if resp_words[2] == 2:
             raise Timeout("target said 'RX error/timeout'")
         problems = {0: "unknown/invalid command", 1: "bad CRC"}
         raise BootloadError("target said '{}'".format(
-            problems.get(resp_words[1], resp_words[1])))
+            problems.get(resp_words[2], resp_words[2])))
 
     # connect to the target on serial port "port". give up after (about)
     # "timeout" seconds. return if connected or throw exception if failure

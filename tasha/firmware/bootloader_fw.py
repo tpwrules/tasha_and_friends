@@ -15,21 +15,23 @@
 # CRC of bytes [0x2, 0x1, 0x3, 0x4]
 
 # UART command packet format:
-# first word: command
+# first word: header (always 0x7A5A)
+# second word: command
 #   bits 7-0: number of parameters, always 2 for the bootloader's commands
 #   bits 15-8: command number, defined later
-# second word: parameter 1 (command specific)
-# third word: parameter 2 (command specific)
-# fourth word: CRC of previous words
+# third word: parameter 1 (command specific)
+# fourth word: parameter 2 (command specific)
+# fifth word: CRC of previous words (except first)
 
 # UART response packet format: (in response to command)
-# first word: result
+# first word: header (always 0x7A5A)
+# second word: result
 #   bits 7-0: number of parameters, always 1 for the bootloader's responses
 #   bits 15-8: result code, always 1 for the bootloader's responses
-# second word: command status:
+# third word: command status:
 #              0=unknown cmd/invalid length, 1=bad CRC,
 #              2=RX error/timeout, 3=success
-# third word: CRC of previous words
+# fourth word: CRC of previous words (except first)
 
 # commands
 # command 1: hello
@@ -84,7 +86,7 @@ from ..gateware.periph_map import p_map
 # The gateware gets to store seven 16-bit words as information about itself. The
 # bootloader gets the 8th to store the version. The host verifies the bootloader
 # version and gives the rest of the info words to the host application.
-BOOTLOADER_VERSION = 2
+BOOTLOADER_VERSION = 3
 
 # MEMORY MAP
 # We have a 256 word memory into which we have to fit all the code, buffers, and
@@ -121,7 +123,6 @@ def make_bootloader(info_words):
         # set UART receive timeout to about 150ms
         MOVI(R0, int((12e6*(150/1000))/256)),
         STXA(R0, p_map.uart.w_rt_timer),
-        # CRC will be reset to its initial value of 0
     ]
     r = RegisterManager(
         "R7:lr R6:comm_word R5:temp R4:cmd_status "
@@ -131,8 +132,37 @@ def make_bootloader(info_words):
         # clear any UART errors and reset the receive timeout
         MOVI(r.temp, 0xFFFF),
         STXA(r.temp, p_map.uart.w_error_clear),
-        # the CRC was 0 from the last packet we sent out, so we don't bother
-        # resetting it.
+
+    L("rx_header_lo"), # wait to get the header low byte (0x5A)
+        # check for UART errors (timeouts, overflows, etc.)
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp), # set flags
+        BZ0("main_loop"),
+        # get a new byte and check if it matches. we don't bother checking if we
+        # got anything because it won't match in that case and we just loop
+        # until it does
+        LDXA(r.temp, p_map.uart.r_rx_hi),
+        CMPI(r.temp, 0x5A << 7),
+        BNE("rx_header_lo"),
+
+    L("rx_header_hi"), # do the same for the header high byte (0x7A)
+        # check for UART errors (timeouts, overflows, etc.)
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp), # set flags
+        BZ0("main_loop"),
+        # get a new byte and check if it matches. if we didn't get anything we
+        # try to receive the high byte again.
+        LDXA(r.temp, p_map.uart.r_rx_hi),
+        ADD(r.temp, r.temp, r.temp),
+        BC1("rx_header_hi"),
+        # if we actually got the first byte, go back to looking for the second
+        CMPI(r.temp, 0x5A << 8),
+        BEQ("rx_header_hi"),
+        CMPI(r.temp, 0x7A << 8),
+        BNE("main_loop"),
+
+        # we have confirmed both header bytes. who knows what the CRC is now.
+        STXA(r.temp, p_map.uart.w_crc_reset), # write something to reset it
 
         # receive the four packet words
         JAL(r.lr, "rx_word"),
@@ -189,9 +219,12 @@ def make_bootloader(info_words):
     L("send_response_packet"),
         # save LR because we need to reuse it to call the tx function
         MOV(r.send_lr, r.lr),
+        # send out the header first
+        MOVI(r.comm_word, 0x7A5A),
+        JAL(r.lr, "tx_word"),
         # reset CRC so the packet CRC is calculated correctly
         STXA(r.send_lr, p_map.uart.w_crc_reset), # we can write anything
-        # header is always the same: length 1 type 1
+        # the command is always the same: length 1 type 1
         MOVI(r.comm_word, 0x0101),
         JAL(r.lr, "tx_word"),
         # then the status code
@@ -328,7 +361,7 @@ def make_bootloader(info_words):
         raise ValueError(
             "bootrom length {} is over max of {} by {} words".format(
                 fw_len, FW_MAX_LENGTH, fw_len-FW_MAX_LENGTH))
-    elif True:
+    elif False:
         print("bootrom length {} is under max of {} by {} words".format(
             fw_len, FW_MAX_LENGTH, FW_MAX_LENGTH-fw_len))
 

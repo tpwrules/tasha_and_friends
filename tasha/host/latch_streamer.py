@@ -147,13 +147,12 @@ class LatchStreamer:
         # wait until we get a valid status packet
         while True:
             c1 = self.port.read(1)
-            if c1 != b"\x03":
+            if c1 != b"\x5A":
                 continue
             c2 = self.port.read(1)
-            if c2 != b"\x10":
+            if c2 != b"\x7A":
                 continue
-            rest = b"\x03\x10" + self.port.read(8)
-            if crc_16_kermit(rest) == 0:
+            if crc_16_kermit(self.port.read(10)) == 0:
                 break
 
         status_cb("Success!")
@@ -180,35 +179,35 @@ class LatchStreamer:
     def _parse_latest_packet(self):
         packet = None
         while True:
-            pos = self.in_chunks.find(b'\x03\x10')
+            pos = self.in_chunks.find(b'\x5A\x7A')
             if pos == -1: # not found
                 # we are done if there's no data left
                 if len(self.in_chunks) == 0:
                     break
                 # if the last byte could be the start of the packet, save it
-                if self.in_chunks[-1] == b'\x03':
+                if self.in_chunks[-1] == b'\x5A':
                     self.in_chunks = self.in_chunks[-1:]
                 else:
                     self.in_chunks.clear()
                 break
 
-            packet_data = self.in_chunks[pos:pos+10]
-            if len(packet_data) < 10: # packet is not complete
+            packet_data = self.in_chunks[pos:pos+12]
+            if len(packet_data) < 12: # packet is not complete
                 # save what we've got for later
                 self.in_chunks = self.in_chunks[pos:]
                 break
 
             # is the packet valid?
-            if crc_16_kermit(packet_data) != 0:
+            if crc_16_kermit(packet_data[2:]) != 0:
                 # nope. throw away the header. maybe a packet starts after it.
                 self.status_cb("WARNING: invalid packet received: {!r}".format(
                     packet_data))
                 self.in_chunks = self.in_chunks[pos+2:]
             else:
                 # it is. parse the useful bits from it
-                packet = struct.unpack("<3H", packet_data[2:8])
+                packet = struct.unpack("<3H", packet_data[4:10])
                 # and remove it from the stream
-                self.in_chunks = self.in_chunks[pos+10:]
+                self.in_chunks = self.in_chunks[pos+12:]
 
         return packet
 
@@ -321,10 +320,12 @@ class LatchStreamer:
                 if num_sent == 0: break # queue was empty.
 
                 # send the latch transmission command
-                cmd = struct.pack("<4H", 0x1003, self.stream_pos, num_sent, 0)
+                cmd = struct.pack("<5H",
+                    0x7A5A, 0x1003, self.stream_pos, num_sent, 0)
                 self.out_chunks.append(cmd)
+                # don't CRC the header
                 self.out_chunks.append(
-                    crc_16_kermit(cmd).to_bytes(2, byteorder="little"))
+                    crc_16_kermit(cmd[2:]).to_bytes(2, byteorder="little"))
 
                 # merge all the data together into one chunk for transmission
                 latch_data = b''.join(latch_data)
