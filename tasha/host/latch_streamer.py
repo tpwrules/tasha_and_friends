@@ -163,8 +163,7 @@ class LatchStreamer:
         self.out_curr_chunk = None
         self.out_curr_chunk_pos = None
 
-        self.in_chunks = []
-        self.in_chunk_len = 0
+        self.in_chunks = bytearray()
 
         # initialize stream
         self.stream_pos = len(priming_latches)
@@ -177,6 +176,42 @@ class LatchStreamer:
         self.connected = True
 
 
+    # find, parse, and return the latest packet from in_chunks
+    def _parse_latest_packet(self):
+        packet = None
+        while True:
+            pos = self.in_chunks.find(b'\x03\x10')
+            if pos == -1: # not found
+                # we are done if there's no data left
+                if len(self.in_chunks) == 0:
+                    break
+                # if the last byte could be the start of the packet, save it
+                if self.in_chunks[-1] == b'\x03':
+                    self.in_chunks = self.in_chunks[-1:]
+                else:
+                    self.in_chunks.clear()
+                break
+
+            packet_data = self.in_chunks[pos:pos+10]
+            if len(packet_data) < 10: # packet is not complete
+                # save what we've got for later
+                self.in_chunks = self.in_chunks[pos:]
+                break
+
+            # is the packet valid?
+            if crc_16_kermit(packet_data) != 0:
+                # nope. throw away the header. maybe a packet starts after it.
+                self.status_cb("WARNING: invalid packet received: {!r}".format(
+                    packet_data))
+                self.in_chunks = self.in_chunks[pos+2:]
+            else:
+                # it is. parse the useful bits from it
+                packet = struct.unpack("<3H", packet_data[2:8])
+                # and remove it from the stream
+                self.in_chunks = self.in_chunks[pos+10:]
+
+        return packet
+
     # Call repeatedly to perform communication. Reads messages from TASHA and
     # sends latches back out.
     def communicate(self):
@@ -185,28 +220,16 @@ class LatchStreamer:
 
         status_cb = self.status_cb
 
-        # receive any status packet pieces
+        # receive any status packet pieces, then parse out any status packets
         rx_new = self.port.read(65536)
+        packet = None
         if len(rx_new) > 0:
-            self.in_chunks.append(rx_new)
-            self.in_chunk_len += len(rx_new)
+            self.in_chunks.extend(rx_new)
+            packet = self._parse_latest_packet()
 
-        # parse status packets out of them
-        while self.in_chunk_len >= 10:
-            # pull out one packet
-            # todo: be less gross
-            in_data = b''.join(self.in_chunks)
-            packet = in_data[:10]
-            self.in_chunks = [in_data[10:]]
-            self.in_chunk_len = len(self.in_chunks[0])
-
-            if crc_16_kermit(packet) != 0 or packet[:2] != b'\x03\x10':
-                raise Exception("bad packet {!r}".format(packet))
-
-            # get fields of interest; namely the current error, the device
-            # stream position, and how much space is in its buffer.
-            p_error, p_stream_pos, p_buffer_space = \
-                struct.unpack("<3H", packet[2:8])
+        # if we got a packet, parse it
+        if packet is not None:
+            p_error, p_stream_pos, p_buffer_space = packet
 
             # if there is an error, we need to intervene.
             if p_error != 0:
@@ -260,11 +283,12 @@ class LatchStreamer:
             if actual_buffer_space < 20:
                 # don't bother sending so few latches, or even printing the
                 # status message.
-                continue
-            msg = "  D:{:05d}<-P:{:05d} B:{:05d} T:{:05d} S:{:05d}".format(
-                p_stream_pos, self.stream_pos, p_buffer_space,
-                in_transit, actual_buffer_space)
-            status_cb(msg)
+                pass
+            else:
+                msg = "  D:{:05d}<-P:{:05d} B:{:05d} T:{:05d} S:{:05d}".format(
+                    p_stream_pos, self.stream_pos, p_buffer_space,
+                    in_transit, actual_buffer_space)
+                status_cb(msg)
 
             # queue that many for transmission
             while actual_buffer_space >= 20:
@@ -276,11 +300,8 @@ class LatchStreamer:
 
                 latch_data = []
                 num_sent = 0
-                while num_sent < 20:
-                    try:
-                        more_latches = self.latch_queue.popleft()
-                    except IndexError:
-                        break # queue is empty
+                while num_sent < 20 and len(self.latch_queue) > 0:
+                    more_latches = self.latch_queue.popleft()
                     self.latch_queue_len -= len(more_latches)
 
                     # would this put us over the max?
@@ -297,7 +318,7 @@ class LatchStreamer:
                     latch_data.append(more_latches.tobytes('C'))
                     num_sent += len(more_latches)
 
-                if num_sent == 0: break # queue is empty
+                if num_sent == 0: break # queue was empty.
 
                 # send the latch transmission command
                 cmd = struct.pack("<4H", 0x1003, self.stream_pos, num_sent, 0)
