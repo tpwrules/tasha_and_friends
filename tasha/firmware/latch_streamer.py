@@ -696,7 +696,13 @@ def main_loop_body():
 # sticking it in the buffer to begin with avoids special-casing that latch, and
 # the extra is nice to jumpstart the buffer.
 def make_firmware(priming_latches=[],
-        already_latching=False):
+        already_latching=False,
+        apu_freq_basic=None,
+        apu_freq_advanced=None):
+
+    if apu_freq_basic is None and apu_freq_advanced is not None:
+        raise ValueError("must set apu basic before advanced")
+
     num_priming_latches = len(priming_latches)//5
     if len(priming_latches) % 5 != 0:
         raise ValueError("priming latches must have 5 words per latch")
@@ -721,6 +727,17 @@ def make_firmware(priming_latches=[],
         # register. once it expires, the correct value will be loaded.
         STXA(R0, p_map.timer.timer[0].w_value),
     ]
+
+    if apu_freq_basic is not None:
+        fw.append([
+            MOVI(R2, int(apu_freq_basic) & 0xFFFF),
+            STXA(R2, p_map.snes.w_apu_freq_basic),
+        ])
+    if apu_freq_advanced is not None:
+        fw.append([
+            MOVI(R2, int(apu_freq_advanced) & 0xFFFF),
+            STXA(R2, p_map.snes.w_apu_freq_advanced),
+        ])
 
     if already_latching:
         # clear the latch state so there won't immediately be an error if some

@@ -21,6 +21,11 @@
 #   reestablished and a status packet can be sent. It may be necessary to
 #   increase this when already_latching is set.
 
+# apu_freq_basic and apu_freq_advanced: Configure the initial values for the APU
+#   basic and advanced frequency setting registers. If None, the defaults
+#   compiled into the gateware are used. Consult calculate_advanced in
+#   gateware/apu_calc.py for information on how to choose the value.
+
 import struct
 import random
 import collections
@@ -49,10 +54,14 @@ error_codes = {
 class LatchStreamer:
     def __init__(self,
             already_latching=False,
-            num_priming_latches=100):
+            num_priming_latches=100,
+            apu_freq_basic=None,
+            apu_freq_advanced=None):
         self.already_latching = already_latching
         # we can't pre-fill the buffer with more latches than fit in it
         self.num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE-1)
+        self.apu_freq_basic = apu_freq_basic
+        self.apu_freq_advanced = apu_freq_advanced
 
         self.connected = False
         self.latch_queue = collections.deque()
@@ -110,7 +119,9 @@ class LatchStreamer:
         self.latch_queue_len -= len(priming_latches)
 
         firmware = make_firmware(priming_latches.reshape(-1),
-            already_latching=self.already_latching)
+            already_latching=self.already_latching,
+            apu_freq_basic=self.apu_freq_basic,
+            apu_freq_advanced=self.apu_freq_advanced)
 
         status_cb("Connecting to TASHA...")
         bootloader = bootload.Bootloader()

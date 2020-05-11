@@ -4,6 +4,7 @@ import time
 import numpy as np
 
 from .latch_streamer import LatchStreamer
+from ..gateware.apu_calc import calculate_advanced
 
 parser = argparse.ArgumentParser(description='Play back a TAS using TASHA.')
 parser.add_argument('port', type=str,
@@ -14,6 +15,9 @@ parser.add_argument('file', type=argparse.FileType('rb'),
 parser.add_argument('-b', '--blank', type=int, default=0,
     help='Prepend blank latches to or (if negative) remove latches from the '
     'start of the TAS.')
+parser.add_argument('--apu_freq', type=float, default=None,
+    help='Configure the initial APU frequency in MHz (before the TAS takes '
+    'control, if configured). If not set, defaults to 24.607104MHz.')
 
 args = parser.parse_args()
 
@@ -32,7 +36,21 @@ def read_latches(num_latches):
     # then return it as a flattened array
     return out
 
-latch_streamer = LatchStreamer()
+apu_freq_basic = None
+apu_freq_advanced = None
+
+if args.apu_freq is not None:
+    apu_freq_basic, apu_freq_advanced, actual = \
+        calculate_advanced(args.apu_freq)
+
+    if abs(args.apu_freq-actual) > 10e-6:
+        print("WARNING: desired APU frequency is {:.6f} but actual will be "
+            "{:.6f} (more than 10Hz different)".format(args.apu_freq, actual))
+
+latch_streamer = LatchStreamer(
+    apu_freq_basic=apu_freq_basic,
+    apu_freq_advanced=apu_freq_advanced,
+)
 
 if args.blank > 0:
     latch_streamer.add_latches(np.zeros((args.blank, 5), dtype=np.uint16))
