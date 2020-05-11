@@ -63,11 +63,12 @@ def set_freq(*, desired=None, jitter=None, jitter_mode=None, polarity=None):
     basic, advanced, actual = calculate_advanced(
         curr_desired, curr_jitter, curr_jitter_mode, curr_polarity)
 
-    data = struct.pack("<3H",
+    data = struct.pack("<4H",
+        0x7A5A, # header
         0x2002, # command
         basic, advanced,
     )
-    data += crc_16_kermit(data).to_bytes(2, byteorder="little")
+    data += crc_16_kermit(data[2:]).to_bytes(2, byteorder="little")
     _port.write(data)
     _port.flush()
 

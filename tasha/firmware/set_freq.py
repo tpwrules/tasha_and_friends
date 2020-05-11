@@ -12,14 +12,15 @@
 # CRC of bytes [0x2, 0x1, 0x3, 0x4]
 
 # command packet format:
-# first word: command
+# first word: header (always 0x7A5A)
+# second word: command
 #   bits 7-0: number of parameters, always 2
 #   bits 15-8: command number, always 0x20
-# second word: APU frequency adjust (basic)
-# third word: APU frequency adjust (advanced)
-# fourth word: CRC of previous words
+# third word: APU frequency adjust (basic)
+# fourth word: APU frequency adjust (advanced)
+# fifth word: CRC of previous words
 
-# consult snes.py for definition of the second and third word. if the command is
+# consult snes.py for definition of the third and fourth word. if the command is
 # invalid or the CRC fails or whatever, the command just gets ignored.
 
 # Note: also accepts the bootloader hello command (command number 1 with 2
@@ -52,8 +53,37 @@ def make_firmware():
         # clear any UART errors and reset the receive timeout
         MOVI(r.temp, 0xFFFF),
         STXA(r.temp, p_map.uart.w_error_clear),
-        # reset the CRC engine
-        STXA(r.temp, p_map.uart.w_crc_reset), # we can write anything
+
+    L("rx_header_lo"), # wait to get the header low byte (0x5A)
+        # check for UART errors (timeouts, overflows, etc.)
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp), # set flags
+        BZ0("main_loop"),
+        # get a new byte and check if it matches. we don't bother checking if we
+        # got anything because it won't match in that case and we just loop
+        # until it does
+        LDXA(r.temp, p_map.uart.r_rx_hi),
+        CMPI(r.temp, 0x5A << 7),
+        BNE("rx_header_lo"),
+
+    L("rx_header_hi"), # do the same for the header high byte (0x7A)
+        # check for UART errors (timeouts, overflows, etc.)
+        LDXA(r.temp, p_map.uart.r_error),
+        AND(r.temp, r.temp, r.temp), # set flags
+        BZ0("main_loop"),
+        # get a new byte and check if it matches. if we didn't get anything we
+        # try to receive the high byte again.
+        LDXA(r.temp, p_map.uart.r_rx_hi),
+        ADD(r.temp, r.temp, r.temp),
+        BC1("rx_header_hi"),
+        # if we actually got the first byte, go back to looking for the second
+        CMPI(r.temp, 0x5A << 8),
+        BEQ("rx_header_hi"),
+        CMPI(r.temp, 0x7A << 8),
+        BNE("main_loop"),
+
+        # we have confirmed both header bytes. who knows what the CRC is now.
+        STXA(r.temp, p_map.uart.w_crc_reset), # write something to reset it
 
         # receive the command packet
         JAL(r.rxlr, "rx_comm_word"),
