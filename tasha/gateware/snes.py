@@ -14,11 +14,17 @@ from .apu_calc import calculate_counter
 #    Read: bit  0: 1 if a latch event occurred since acknowledge, 0 if not
 #   Write:   15-0: write anything to force a latch event
 
-# 0x1: (R) Missed Latch & Acknowledge
+# 0x1: (R) Missed Latch & Acknowledge / (W) Enable Latch
 #    Read: bit  0: 1 if a latch event was missed, 0 if not
 #   A latch event is considered "missed" if it occurred while Did Latch above
 #   was 1. Reading this register acknowledges the latch by clearing both Did
 #   Latch and Missed Latch.
+#
+#   Write: bit  0: 1 if register data is latched into the output, 0 if not
+#   If this is 0, latch events cause the output shift registers to be loaded
+#   with all 0s, and prevent the APU clock generator from being updated. Latch
+#   events caused by Force Latch are not affected by this setting. Writing to
+#   this register also acknowledges events as above.
 
 # APU frequency adjustment registers. Consult apu_clockgen.py for the complete
 # explanation and limitations of the registers.
@@ -54,8 +60,10 @@ class DataLineDriver(Elaboratable):
     def __init__(self):
         # controllers were latched: load i_buttons into shift registers
         self.i_latched = Signal()
-        # clock: on rising edge, shift register << 1
-        self.i_clock = Signal()
+        # was latching enabled? if not, load zeros instead of i_buttons
+        self.i_latch_enabled = Signal()
+        # clocked: shift register << 1
+        self.i_clocked = Signal()
         # the buttons to latch in. they go MSB first
         self.i_buttons = Signal(16)
 
@@ -70,12 +78,9 @@ class DataLineDriver(Elaboratable):
         # the high bit of which is the serial output
         m.d.comb += self.o_data.eq(reg[-1])
 
-        prev_clock = Signal()
-        m.d.sync += prev_clock.eq(self.i_clock)
-
         with m.If(self.i_latched):
-            m.d.sync += reg.eq(self.i_buttons)
-        with m.Elif(~prev_clock & self.i_clock):
+            m.d.sync += reg.eq(Mux(self.i_latch_enabled, self.i_buttons, 0))
+        with m.Elif(self.i_clocked):
             # 1s get output once all the buttons are done
             m.d.sync += reg.eq((reg << 1) | 1)
 
@@ -96,7 +101,8 @@ class Controllers(Elaboratable):
         }
 
         self.i_force_latch = Signal() # pretend a latch occurred
-        # latch line fell this cycle (and buttons will be transferred)
+        self.i_enable_latch = Signal() # allow console to latch data
+        # latch event occurred this cycle (and buttons will be transferred)
         self.o_latched = Signal()
 
         # make drivers for each controller data line
@@ -116,13 +122,35 @@ class Controllers(Elaboratable):
         m.submodules += FFSynchronizer(snes_signals.i_p1clk, i_p1clk)
         m.submodules += FFSynchronizer(snes_signals.i_p2clk, i_p2clk)
 
-        # detect the latch falling edge so we can prepare appropriately
-        latched = Signal()
+        # process the clock and latch lines. on the shift register we're
+        # emulating, the latch line rises to enable capturing the buttons. in
+        # this state, the shift clock has no effect and the highest bit is
+        # always visible on the data line. once the latch line falls, the
+        # buttons are actually latched into the shift register. now, once the
+        # shift clock rises, the data is shifted out by 1 bit.
         prev_latch = Signal()
-        m.d.sync += prev_latch.eq(i_latch)
-        m.d.comb += latched.eq((prev_latch & ~i_latch) | self.i_force_latch)
-        # tell others the latch status
-        m.d.comb += self.o_latched.eq(latched)
+        prev_p1clk = Signal()
+        prev_p2clk = Signal()
+        m.d.sync += [
+            prev_latch.eq(i_latch),
+            prev_p1clk.eq(i_p1clk),
+            prev_p2clk.eq(i_p2clk),
+        ]
+        latched = Signal()
+        p1clked = Signal()
+        p2clked = Signal()
+        m.d.comb += [
+            # console latches on rising edge, or if it's forced
+            latched.eq((~prev_latch & i_latch) | self.i_force_latch),
+            # if the latch line is high, the shift clock has no effect
+            p1clked.eq(~prev_p1clk & i_p1clk & ~i_latch),
+            p2clked.eq(~prev_p2clk & i_p2clk & ~i_latch),
+
+            self.o_latched.eq(latched)
+        ]
+        # latching is always enabled if a latch is forced
+        latch_enabled = Signal()
+        m.d.comb += latch_enabled.eq(self.i_enable_latch | self.i_force_latch)
 
         # hook up the drivers
         for line_name in self.i_buttons.keys():
@@ -131,12 +159,13 @@ class Controllers(Elaboratable):
             m.d.comb += [
                 driver.i_latched.eq(latched),
                 driver.i_buttons.eq(i_buttons),
+                driver.i_latch_enabled.eq(latch_enabled),
                 getattr(snes_signals, "o_"+line_name).eq(driver.o_data),
             ]
             if line_name.startswith("p1"):
-                m.d.comb += driver.i_clock.eq(i_p1clk)
+                m.d.comb += driver.i_clocked.eq(p1clked)
             else:
-                m.d.comb += driver.i_clock.eq(i_p2clk)
+                m.d.comb += driver.i_clocked.eq(p2clked)
 
             m.submodules[line_name] = driver
 
@@ -191,8 +220,11 @@ class SNES(Elaboratable):
         ac_jitter_mode = Signal()
         ac_polarity = Signal()
 
-        # latch in new frequency with latch signal
-        with m.If(self.controllers.o_latched):
+        # latch in new frequency with latch signal if enabled or forced
+        allowed = Signal()
+        m.d.comb += allowed.eq(
+            self.controllers.i_enable_latch | self.controllers.i_force_latch)
+        with m.If(self.controllers.o_latched & allowed):
             m.d.sync += [
                 ac_counter.eq(ar_counter),
                 ac_jitter.eq(ar_jitter),
@@ -232,6 +264,13 @@ class SNES(Elaboratable):
             with m.Switch(self.i_addr[:3]):
                 with m.Case(0): # force a latch
                     m.d.comb += controllers.i_force_latch.eq(1)
+                with m.Case(1): # enable latches from the console
+                    m.d.sync += controllers.i_enable_latch.eq(self.i_wdata[0])
+                    m.d.comb += [
+                        # and reset the status
+                        did_latch.reset.eq(1),
+                        missed_latch.reset.eq(1),
+                    ]
                 with m.Case(2): # basic APU frequency adjust
                     m.d.sync += ar_counter[4:-4].eq(self.i_wdata)
                 with m.Case(3): # advanced APU frequency adjust

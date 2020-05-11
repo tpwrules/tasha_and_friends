@@ -720,6 +720,10 @@ def make_firmware(priming_latches=[],
         MOVI(R0, INITIAL_REGISTER_WINDOW),
         STW(R0),
 
+        # turn on latches so we can actually hear the console
+        MOVI(R0, 1),
+        STXA(R0, p_map.snes.w_enable_latch),
+
         # set UART receive timeout to about 2ms. we can't afford to be waiting!
         MOVI(R0, int((12e6*(2/1000))/256)),
         STXA(R0, p_map.uart.w_rt_timer),

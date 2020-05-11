@@ -78,6 +78,7 @@ _snes = _namedtupleton("snes",
         r_did_latch=0,
         w_force_latch=0,
         r_missed_latch_and_ack=1,
+        w_enable_latch=1,
 
         w_apu_freq_basic=2,
         w_apu_freq_advanced=3,
