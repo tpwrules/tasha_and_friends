@@ -10,16 +10,9 @@
 
 # LATCH STREAMER SETTINGS (parameters to the __init__)
 
-# already_latching: Assume the console is already latching before the program
-#   starts. This has two effects: once the program starts, it clears pending
-#   latches from the hardware, and does not force a latch. This eliminates
-#   "missed latch" errors, with the caveat that the data the console gets before
-#   the program starts (and the first latch after it starts) is undefined.
-
 # num_priming_latches: Configure the number of latches to download with the
 #   firmware. These latches must tide the firmware over until communication is
-#   reestablished and a status packet can be sent. It may be necessary to
-#   increase this when already_latching is set.
+#   reestablished and a status packet can be sent.
 
 # apu_freq_basic and apu_freq_advanced: Configure the initial values for the APU
 #   basic and advanced frequency setting registers. If None, the defaults
@@ -53,11 +46,9 @@ error_codes = {
 
 class LatchStreamer:
     def __init__(self,
-            already_latching=False,
             num_priming_latches=100,
             apu_freq_basic=None,
             apu_freq_advanced=None):
-        self.already_latching = already_latching
         # we can't pre-fill the buffer with more latches than fit in it
         self.num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE-1)
         self.apu_freq_basic = apu_freq_basic
@@ -119,7 +110,6 @@ class LatchStreamer:
         self.latch_queue_len -= len(priming_latches)
 
         firmware = make_firmware(priming_latches.reshape(-1),
-            already_latching=self.already_latching,
             apu_freq_basic=self.apu_freq_basic,
             apu_freq_advanced=self.apu_freq_advanced)
 

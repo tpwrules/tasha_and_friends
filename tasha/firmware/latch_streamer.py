@@ -696,7 +696,6 @@ def main_loop_body():
 # sticking it in the buffer to begin with avoids special-casing that latch, and
 # the extra is nice to jumpstart the buffer.
 def make_firmware(priming_latches=[],
-        already_latching=False,
         apu_freq_basic=None,
         apu_freq_advanced=None):
 
@@ -720,10 +719,6 @@ def make_firmware(priming_latches=[],
         MOVI(R0, INITIAL_REGISTER_WINDOW),
         STW(R0),
 
-        # turn on latches so we can actually hear the console
-        MOVI(R0, 1),
-        STXA(R0, p_map.snes.w_enable_latch),
-
         # set UART receive timeout to about 2ms. we can't afford to be waiting!
         MOVI(R0, int((12e6*(2/1000))/256)),
         STXA(R0, p_map.uart.w_rt_timer),
@@ -732,6 +727,12 @@ def make_firmware(priming_latches=[],
         STXA(R0, p_map.timer.timer[0].w_value),
     ]
 
+    # out of reset, the button registers are all zero, the APU frequency is
+    # 24.607104MHz, and latching is disabled. as long as latching remains
+    # disabled, the frequency won't change and the console will see no buttons
+    # no matter how much it latches.
+
+    # set the initial APU frequency values
     if apu_freq_basic is not None:
         fw.append([
             MOVI(R2, int(apu_freq_basic) & 0xFFFF),
@@ -742,25 +743,32 @@ def make_firmware(priming_latches=[],
             MOVI(R2, int(apu_freq_advanced) & 0xFFFF),
             STXA(R2, p_map.snes.w_apu_freq_advanced),
         ])
+    # force a latch so the APU clock generator gets updated
+    fw.append(STXA(R2, p_map.snes.w_force_latch))
 
-    if already_latching:
-        # clear the latch state so there won't immediately be an error if some
-        # latches happened before we started.
-        fw.append([
-            LDXA(R1, p_map.snes.r_missed_latch_and_ack),
-        ])
-    else:
-        fw.append([
-            # write something to force a latch so the first latch makes its way
-            # into the interface. if we are already latching, we let the console
-            # do this. the console will get junk the first latch, but it already
-            # got junk the latches before so whatever.
-            STXA(R0, p_map.snes.w_force_latch),
-        ])
-
+    # load the initial buttons into the registers
     fw.append([
-        J("main_loop")
+        MOVI(R2, priming_latches[0]),
+        STXA(R2, p_map.snes.w_p1d0),
+        MOVI(R2, priming_latches[1]),
+        STXA(R2, p_map.snes.w_p1d1),
+        MOVI(R2, priming_latches[2]),
+        STXA(R2, p_map.snes.w_p2d0),
+        MOVI(R2, priming_latches[3]),
+        STXA(R2, p_map.snes.w_p2d1),
     ])
+
+    # now that the registers are loaded, we can turn latching back on. this
+    # setup guarantees the console will transition directly from seeing no
+    # buttons to seeing the first set of buttons once it latches. there can't be
+    # any intermediate states.
+    fw.append([
+        MOVI(R2, 1),
+        STXA(R2, p_map.snes.w_enable_latch),
+    ])
+
+    # initialization is done. let's get the party started!
+    fw.append(J("main_loop"))
 
     fw.append(send_status_packet())
     # run the main loop
@@ -770,8 +778,9 @@ def make_firmware(priming_latches=[],
     # define all the variables
     defs = [0]*len(Vars)
     # the buffer is primed with some latches so that we can start before
-    # communication gets reestablished
-    defs[Vars.buf_head] = num_priming_latches
+    # communication gets reestablished. but we put one in the interface at the
+    # beginning
+    defs[Vars.buf_head] = num_priming_latches-1
     defs[Vars.stream_pos] = num_priming_latches
     fw.append([
     L("vars"),
@@ -799,7 +808,8 @@ def make_firmware(priming_latches=[],
 
     # pad it out until the latch buffer starts
     assembled_fw.extend([0]*(LATCH_BUF_START-len(assembled_fw)))
-    # then fill it with the priming latches
-    assembled_fw.extend(priming_latches)
+    # then fill it with the priming latches (skipping the one we stuck in the
+    # interface at the beginning)
+    assembled_fw.extend(priming_latches[5:])
 
     return assembled_fw
