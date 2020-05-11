@@ -11,16 +11,19 @@ key:
 
     a: p1d0 data output
     b: latch input
+    B: latched output (1 if a latch was detected)
     c: p1d1 data output
     d: p1 clock input
+    D: p1 clock output (1 if the p1 clock was detected)
     e: p2d0 data output
     f: p2 clock input
+    F: p2 clock output (1 if the p2 clock was detected)
     g: p2d1 data output
 
     +-----+
-    | . . |
-    | . . |
-    | . . |
+    | . B |
+    | . D |
+    | . F |
     | . . |
     | C C |
     | 5 G |

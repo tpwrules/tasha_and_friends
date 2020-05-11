@@ -146,8 +146,15 @@ class Controllers(Elaboratable):
             p1clked.eq(~prev_p1clk & i_p1clk & ~i_latch),
             p2clked.eq(~prev_p2clk & i_p2clk & ~i_latch),
 
-            self.o_latched.eq(latched)
+            self.o_latched.eq(latched),
         ]
+        # send signals to output so operation can be verified
+        m.d.sync += [
+            snes_signals.o_latched.eq(latched),
+            snes_signals.o_p1clked.eq(p1clked),
+            snes_signals.o_p2clked.eq(p2clked),
+        ]
+
         # latching is always enabled if a latch is forced
         latch_enabled = Signal()
         m.d.comb += latch_enabled.eq(self.i_enable_latch | self.i_force_latch)

@@ -70,6 +70,10 @@ class Top(Elaboratable):
             i_p1clk=snes_pins.p1clk,
             i_p2clk=snes_pins.p2clk,
 
+            o_latched=snes_pins.latched,
+            o_p1clked=snes_pins.p1clked,
+            o_p2clked=snes_pins.p2clked,
+
             o_p1d0=snes_pins.p1d0,
             o_p1d1=snes_pins.p1d1,
             o_p2d0=snes_pins.p2d0,

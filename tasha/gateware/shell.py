@@ -20,6 +20,12 @@ SNESSignals = namedtuple("SNESSignals", [
     "i_p1clk", # clock for player 1 controller
     "i_p2clk", # clock for player 2 controller
 
+    # controller loopback signals. 1 the cycle after one of the above signals
+    # was detected and 0 otherwise
+    "o_latched",
+    "o_p1clked",
+    "o_p2clked",
+
     "o_p1d0", # player 1 controller data line 0
     "o_p1d1", #                          line 1
     "o_p2d0", # player 2                 line 0

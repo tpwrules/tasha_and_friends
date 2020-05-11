@@ -1,7 +1,7 @@
 from nmigen import *
 from nmigen.build import *
 
-# connect to PMOD1A
+# connect to PMOD1A (loopbacks are on B)
 snes_pmod = [
     Resource("snes", 0,
         # inputs from snes
@@ -12,6 +12,14 @@ snes_pmod = [
         Subsignal("p2clk", Pins("3", dir="i", conn=("pmod", 0)),
             Attrs(IO_STANDARD="SB_LVCMOS33")),
 
+        # input loopbacks
+        Subsignal("latched", Pins("7", dir="o", conn=("pmod", 1)),
+            Attrs(IO_STANDARD="SB_LVCMOS33")),
+        Subsignal("p1clked", Pins("8", dir="o", conn=("pmod", 1)),
+            Attrs(IO_STANDARD="SB_LVCMOS33")),
+        Subsignal("p2clked", Pins("9", dir="o", conn=("pmod", 1)),
+            Attrs(IO_STANDARD="SB_LVCMOS33")),
+
         # outputs to snes
         Subsignal("p1d0", Pins("8", dir="o", conn=("pmod", 0)),
             Attrs(IO_STANDARD="SB_LVCMOS33")),
@@ -20,9 +28,6 @@ snes_pmod = [
         Subsignal("p2d0", Pins("10", dir="o", conn=("pmod", 0)),
             Attrs(IO_STANDARD="SB_LVCMOS33")),
         Subsignal("p2d1", Pins("7", dir="o", conn=("pmod", 0)),
-            Attrs(IO_STANDARD="SB_LVCMOS33")),
-
-        Subsignal("test", Pins("1", dir="o", conn=("pmod", 0)),
             Attrs(IO_STANDARD="SB_LVCMOS33")),
     )
 ]

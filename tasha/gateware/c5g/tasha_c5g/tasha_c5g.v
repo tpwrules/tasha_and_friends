@@ -220,6 +220,10 @@ tasha_sys_c5g tasha_sys_c5g(
       .i_p1clk(GPIO[17]),
       .i_p2clk(GPIO[19]),
 
+      .o_latched(GPIO[1]),
+      .o_p1clked(GPIO[3]),
+      .o_p2clked(GPIO[5]),
+
       .o_p1d0(GPIO[14]),
       .o_p1d1(GPIO[16]),
       .o_p2d0(GPIO[18]),

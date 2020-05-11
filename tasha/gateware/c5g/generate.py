@@ -18,6 +18,10 @@ class Top(Elaboratable):
         self.i_p1clk = Signal()
         self.i_p2clk = Signal()
 
+        self.o_latched = Signal()
+        self.o_p1clked = Signal()
+        self.o_p2clked = Signal()
+
         self.o_p1d0 = Signal()
         self.o_p1d1 = Signal()
         self.o_p2d0 = Signal()
@@ -66,6 +70,10 @@ class Top(Elaboratable):
             i_latch=self.i_latch,
             i_p1clk=self.i_p1clk,
             i_p2clk=self.i_p2clk,
+
+            o_latched=self.o_latched,
+            o_p1clked=self.o_p1clked,
+            o_p2clked=self.o_p2clked,
 
             o_p1d0=p1d0,
             o_p1d1=p1d1,
