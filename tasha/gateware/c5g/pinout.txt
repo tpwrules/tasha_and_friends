@@ -1,0 +1,41 @@
+Identify the pins of interest on the 40 pin GPIO connector (on the left side of
+the board). Mind the key: the picture below is correct only if you are looking
+at the board upside down. The 5v and 3.3v pins aren't used, but are marked
+because connecting to them by accident could concievably cause damage.
+
+key:
+    G: ground
+    5: 5v out. don't connect by accident!!
+    3: 3.3v out. don't connect by accident!!
+    C: generated clock out
+
+    a: p1d0 data output
+    b: latch input
+    c: p1d1 data output
+    d: p1 clock input
+    e: p2d0 data output
+    f: p2 clock input
+    g: p2d1 data output
+
+    +-----+
+    | . . |
+    | . . |
+    | . . |
+    | . . |
+    | C C |
+    | 5 G |
+    | C C |
+    | . . |
+    | a b |
+      c d |
+      e f |
+    | g . |
+    | . . |
+    | . . |
+    | 3 G |
+    | . . |
+    | . . |
+    | . . |
+    | . . |
+    | . . |
+    +-----+
