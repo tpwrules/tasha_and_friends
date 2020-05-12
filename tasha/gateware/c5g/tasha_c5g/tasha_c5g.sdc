@@ -50,3 +50,8 @@ derive_clock_uncertainty
 
 # tpd constraints
 
+# these registers pass from the main clock domain to the APU clock generator.
+# we don't care if there is skew or delay, and they are resynced to that 
+# domain once we get there, so we don't want the timing analyzer whining about them.
+set_false_path -from [get_registers *\|snes:snes\|ac_*] -to *
+set_false_path -from [get_registers *\|reset_req:reset_req\|o_reset_req] -to *
