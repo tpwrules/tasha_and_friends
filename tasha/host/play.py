@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from .latch_streamer import LatchStreamer
+from .latch_streamer import LatchStreamer, LATCH_BUF_SIZE
 from ..gateware.apu_calc import calculate_advanced
 
 parser = argparse.ArgumentParser(description='Play back a TAS using TASHA.')
@@ -57,8 +57,15 @@ elif args.blank < 0:
         to_read -= len(l)
     l = None
 
-latch_streamer.add_latches(read_latches(100))
+# enough priming latches to tide us over even at max latch speed
+num_priming_latches = 2500
+print("Loading priming latches...")
+while latch_streamer.latch_queue_len < num_priming_latches:
+    latch_streamer.add_latches(read_latches(
+        num_priming_latches-latch_streamer.latch_queue_len))
+
 latch_streamer.connect(args.port, status_cb=print,
+    num_priming_latches=num_priming_latches,
     apu_freq_basic=apu_freq_basic,
     apu_freq_advanced=apu_freq_advanced,
 )

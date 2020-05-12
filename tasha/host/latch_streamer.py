@@ -10,9 +10,12 @@
 
 # LATCH STREAMER SETTINGS (parameters to connect())
 
-# num_priming_latches: Configure the number of latches to download with the
-#   firmware. These latches must tide the firmware over until communication is
-#   reestablished and a status packet can be sent.
+# num_priming_latches: Number of latches to download with the firmware. These
+#   latches must tide the firmware over until communication is reestablished.
+#   This must be at least one, and not greater than the latch buffer size. If
+#   None, the value will be the latch buffer size. At least this many latches
+#   must be in the latch queue before connecting, as this many will be
+#   downloaded with the firmware.
 
 # apu_freq_basic and apu_freq_advanced: Configure the initial values for the APU
 #   basic and advanced frequency setting registers. If None, the defaults
@@ -83,33 +86,22 @@ class LatchStreamer:
 
     # Connect to TASHA. status_cb is basically just print for now.
     def connect(self, port, status_cb=print,
-            num_priming_latches=100,
+            num_priming_latches=None,
             apu_freq_basic=None,
             apu_freq_advanced=None):
         if self.connected is True:
             raise ValueError("already connected")
 
+        if num_priming_latches is None:
+            num_priming_latches = LATCH_BUF_SIZE
+
         # we can't pre-fill the buffer with more latches than fit in it
-        num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE-1)
+        num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE)
 
-        if self.latch_queue_len == 0:
-            raise ValueError("add some latches to prime the system before "
-                "connecting")
-
-        status_cb("Building application...")
-
-        # get the first entry in the queue
-        first = self.latch_queue.popleft()
-        # pull some latches off it and save the remainder
-        npl = num_priming_latches
-        priming_latches, first = first[:npl], first[npl:]
-        # if there are any left, stick them back where we got them
-        self.latch_queue.appendleft(first)
-        self.latch_queue_len -= len(priming_latches)
-
-        firmware = make_firmware(priming_latches.reshape(-1),
-            apu_freq_basic=apu_freq_basic,
-            apu_freq_advanced=apu_freq_advanced)
+        if self.latch_queue_len < num_priming_latches:
+            raise ValueError("{} priming latches requested but only {} "
+                "available in the queue".format(
+                    num_priming_latches, self.latch_queue_len))
 
         status_cb("Connecting to TASHA...")
         bootloader = bootload.Bootloader()
@@ -125,29 +117,27 @@ class LatchStreamer:
 
         bootloader.identify()
 
-        status_cb("Downloading and verifying application...")
+        status_cb("Building firmware...")
+
+        # get the priming latch data and convert it back to words. kinda
+        # inefficient but we only do it once.
+        priming_latches = struct.unpack(
+            "<{}H".format(num_priming_latches*5),
+            self._get_latch_data(num_priming_latches, num_priming_latches))
+
+        firmware = make_firmware(priming_latches,
+            apu_freq_basic=apu_freq_basic,
+            apu_freq_advanced=apu_freq_advanced)
+
+        status_cb("Downloading and starting firmware...")
         firmware = tuple(firmware)
         bootloader.write_memory(0, firmware)
         read_firmware = bootloader.read_memory(0, len(firmware))
         if firmware != read_firmware:
             raise bootload.BootloadError("verification failed")
 
-        status_cb("Connecting to application...")
         bootloader.start_execution(0)
         self.port = serial.Serial(port=port, baudrate=2_000_000, timeout=0.001)
-
-        # wait until we get a valid status packet
-        while True:
-            c1 = self.port.read(1)
-            if c1 != b"\x5A":
-                continue
-            c2 = self.port.read(1)
-            if c2 != b"\x7A":
-                continue
-            if crc_16_kermit(self.port.read(10)) == 0:
-                break
-
-        status_cb("Success!")
 
         # initialize input and output buffers
         self.out_chunks = collections.deque()
@@ -157,7 +147,7 @@ class LatchStreamer:
         self.in_chunks = bytearray()
 
         # initialize stream
-        self.stream_pos = len(priming_latches)
+        self.stream_pos = num_priming_latches
         # keep track of the latches we've sent so we can resend them if there is
         # an error
         self.resend_buf = collections.deque()
@@ -165,7 +155,34 @@ class LatchStreamer:
 
         self.status_cb = status_cb
         self.connected = True
+        self.got_first_packet = False
 
+    # get some latches from the latch queue and return the converted to bytes.
+    # may return less than at_least if not enough latches are available. if
+    # at_most is None, there is no upper bound on the number of latches
+    # returned.
+    def _get_latch_data(self, at_least, at_most=None):
+        latch_data = []
+        num_got = 0
+        while num_got < at_least and len(self.latch_queue) > 0:
+            more_latches = self.latch_queue.popleft()
+            self.latch_queue_len -= len(more_latches)
+
+            # would this put us over the max?
+            if at_most is not None and num_got + len(more_latches) > at_most:
+                # yes, split it up
+                remaining = at_most-num_got
+                more_latches, leftovers = \
+                    more_latches[:remaining], more_latches[remaining:]
+                # and store the extra for next time
+                self.latch_queue.appendleft(leftovers)
+                self.latch_queue_len += len(leftovers)
+
+            # convert to raw bytes for transmission
+            latch_data.append(more_latches.tobytes('C'))
+            num_got += len(more_latches)
+
+        return b''.join(latch_data)
 
     # find, parse, and return the latest packet from in_chunks
     def _parse_latest_packet(self):
@@ -220,6 +237,10 @@ class LatchStreamer:
 
         # if we got a packet, parse it
         if packet is not None:
+            if self.got_first_packet is False:
+                print("Initialization complete! Beginning latch transfer...")
+                self.got_first_packet = True
+
             p_error, p_stream_pos, p_buffer_space = packet
 
             # if there is an error, we need to intervene.
@@ -287,27 +308,9 @@ class LatchStreamer:
                 # overhead, but not more than 200 to avoid having to resend a
                 # lot of latches if there is an error. but of course, we can't
                 # send so many that we overflow the buffer.
-                send_max = min(200, actual_buffer_space)
-
-                latch_data = []
-                num_sent = 0
-                while num_sent < 20 and len(self.latch_queue) > 0:
-                    more_latches = self.latch_queue.popleft()
-                    self.latch_queue_len -= len(more_latches)
-
-                    # would this put us over the max?
-                    if num_sent + len(more_latches) > send_max:
-                        # yes, split it up
-                        remaining = send_max-num_sent
-                        more_latches, leftovers = \
-                            more_latches[:remaining], more_latches[remaining:]
-                        # and store the extra for next time
-                        self.latch_queue.appendleft(leftovers)
-                        self.latch_queue_len += len(leftovers)
-
-                    # convert to raw bytes for transmission
-                    latch_data.append(more_latches.tobytes('C'))
-                    num_sent += len(more_latches)
+                latch_data = self._get_latch_data(
+                    min(20, actual_buffer_space), min(200, actual_buffer_space))
+                num_sent = len(latch_data)//10
 
                 if num_sent == 0: break # queue was empty.
 
@@ -319,9 +322,7 @@ class LatchStreamer:
                 self.out_chunks.append(
                     crc_16_kermit(cmd[2:]).to_bytes(2, byteorder="little"))
 
-                # merge all the data together into one chunk for transmission
-                latch_data = b''.join(latch_data)
-                # and send it too
+                # send all the data along too
                 self.out_chunks.append(latch_data)
                 self.out_chunks.append(
                     crc_16_kermit(latch_data).to_bytes(2, byteorder="little"))

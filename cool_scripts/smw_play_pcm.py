@@ -12,7 +12,7 @@ import time
 
 import numpy as np
 
-from tasha.host.latch_streamer import LatchStreamer
+from tasha.host.latch_streamer import LatchStreamer, LATCH_BUF_SIZE
 
 def bitswap(b):
     b = (b&0xF0) >> 4 | (b&0x0F) << 4
@@ -174,8 +174,15 @@ def read_latches(num_latches):
     return out
 
 latch_streamer = LatchStreamer()
-latch_streamer.add_latches(read_latches(3000))
-latch_streamer.connect(sys.argv[1], status_cb=print, num_priming_latches=3000)
+# enough priming latches to tide us over even at max latch speed
+num_priming_latches = 2500
+print("Loading priming latches...")
+while latch_streamer.latch_queue_len < num_priming_latches:
+    latch_streamer.add_latches(read_latches(
+        num_priming_latches-latch_streamer.latch_queue_len))
+
+latch_streamer.connect(sys.argv[1], status_cb=print,
+    num_priming_latches=num_priming_latches)
 
 while True:
     while latch_streamer.latch_queue_len < 10000:

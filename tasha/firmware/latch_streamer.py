@@ -663,9 +663,9 @@ def make_firmware(priming_latches=[],
     if len(priming_latches) % 5 != 0:
         raise ValueError("priming latches must have 5 words per latch")
 
-    if num_priming_latches > LATCH_BUF_SIZE-1:
+    if num_priming_latches > LATCH_BUF_SIZE:
         raise ValueError("too many priming latches: got {}, max is {}".format(
-            num_priming_latches, LATCH_BUF_SIZE-1))
+            num_priming_latches, LATCH_BUF_SIZE))
 
     fw = [
         # start from "reset" (i.e. download is finished)
