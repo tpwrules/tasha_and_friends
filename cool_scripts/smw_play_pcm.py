@@ -156,8 +156,8 @@ def read_latches(num_latches):
         pcm_data = leftovers + pcm_data
         leftovers = None
     if len(pcm_data) % 8 != 0:
-        num_bytes = len(pcm_data)//8
-        pcm_data, leftovers = pcm_data[:num_bytes], pcm_data[num_bytes:]
+        num_latches = len(pcm_data)//8
+        pcm_data, leftovers = pcm_data[:num_latches*8], pcm_data[num_latches*8:]
 
     # split apart PCM data into bits
     pcm_bits = np.frombuffer(pcm_data, dtype=np.uint16).reshape(-1, 4)
