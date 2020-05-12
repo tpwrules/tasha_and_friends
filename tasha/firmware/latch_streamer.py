@@ -149,14 +149,22 @@ class Vars(IntEnum):
 # R5: error code
 def f_handle_error():
     lp = "_{}_".format(random.randrange(2**32))
-    r = RegisterManager("R5:error_code R4:last_error R0:vars")
+    r = RegisterManager("R5:error_code R4:last_error R3:temp R0:vars")
     fw = [
         # error code is already in R5. since we don't return, we don't have to
         # set up our own register frame
 
         # is the current error a fatal error?
         CMPI(r.error_code, ErrorCode.FATAL_ERROR_START),
-        BGEU(lp+"transmit"), # yes, send the error out
+        BLTU(lp+"regular"), # no, handle it normally
+        # yes. disable latching so the console can no longer see pressed
+        # buttons. if the error was a missed latch, then the console probably
+        # saw garbage, but now it can't anymore.
+        MOVI(r.temp, 0),
+        STXA(r.temp, p_map.snes.w_enable_latch),
+        J(lp+"transmit"), # fatal error codes are always sent
+
+    L(lp+"regular"),
         # do we already have an error code stored?
         # get the last error
         MOVR(r.vars, "vars"),
