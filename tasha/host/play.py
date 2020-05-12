@@ -36,9 +36,10 @@ def read_latches(num_latches):
     # then return it as a flattened array
     return out
 
+latch_streamer = LatchStreamer()
+
 apu_freq_basic = None
 apu_freq_advanced = None
-
 if args.apu_freq is not None:
     apu_freq_basic, apu_freq_advanced, actual = \
         calculate_advanced(args.apu_freq)
@@ -46,11 +47,6 @@ if args.apu_freq is not None:
     if abs(args.apu_freq-actual) > 10e-6:
         print("WARNING: desired APU frequency is {:.6f} but actual will be "
             "{:.6f} (more than 10Hz different)".format(args.apu_freq, actual))
-
-latch_streamer = LatchStreamer(
-    apu_freq_basic=apu_freq_basic,
-    apu_freq_advanced=apu_freq_advanced,
-)
 
 if args.blank > 0:
     latch_streamer.add_latches(np.zeros((args.blank, 5), dtype=np.uint16))
@@ -62,7 +58,10 @@ elif args.blank < 0:
     l = None
 
 latch_streamer.add_latches(read_latches(100))
-latch_streamer.connect(args.port, status_cb=print)
+latch_streamer.connect(args.port, status_cb=print,
+    apu_freq_basic=apu_freq_basic,
+    apu_freq_advanced=apu_freq_advanced,
+)
 
 while True:
     while latch_streamer.latch_queue_len < 10000:

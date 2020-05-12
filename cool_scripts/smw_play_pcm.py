@@ -173,9 +173,9 @@ def read_latches(num_latches):
 
     return out
 
-latch_streamer = LatchStreamer(num_priming_latches=3000)
+latch_streamer = LatchStreamer()
 latch_streamer.add_latches(read_latches(3000))
-latch_streamer.connect(sys.argv[1], status_cb=print)
+latch_streamer.connect(sys.argv[1], status_cb=print, num_priming_latches=3000)
 
 while True:
     while latch_streamer.latch_queue_len < 10000:

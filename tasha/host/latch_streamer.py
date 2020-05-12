@@ -8,7 +8,7 @@
 #   Column 3: player 2 data 1
 #   Column 4: APU frequency control word
 
-# LATCH STREAMER SETTINGS (parameters to the __init__)
+# LATCH STREAMER SETTINGS (parameters to connect())
 
 # num_priming_latches: Configure the number of latches to download with the
 #   firmware. These latches must tide the firmware over until communication is
@@ -45,15 +45,7 @@ error_codes = {
 }
 
 class LatchStreamer:
-    def __init__(self,
-            num_priming_latches=100,
-            apu_freq_basic=None,
-            apu_freq_advanced=None):
-        # we can't pre-fill the buffer with more latches than fit in it
-        self.num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE-1)
-        self.apu_freq_basic = apu_freq_basic
-        self.apu_freq_advanced = apu_freq_advanced
-
+    def __init__(self):
         self.connected = False
         self.latch_queue = collections.deque()
         # the queue is composed of arrays with many latches in each. keep track
@@ -90,9 +82,15 @@ class LatchStreamer:
         self.latch_queue_len = 0
 
     # Connect to TASHA. status_cb is basically just print for now.
-    def connect(self, port, status_cb=print):
+    def connect(self, port, status_cb=print,
+            num_priming_latches=100,
+            apu_freq_basic=None,
+            apu_freq_advanced=None):
         if self.connected is True:
             raise ValueError("already connected")
+
+        # we can't pre-fill the buffer with more latches than fit in it
+        num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE-1)
 
         if self.latch_queue_len == 0:
             raise ValueError("add some latches to prime the system before "
@@ -103,15 +101,15 @@ class LatchStreamer:
         # get the first entry in the queue
         first = self.latch_queue.popleft()
         # pull some latches off it and save the remainder
-        npl = self.num_priming_latches
+        npl = num_priming_latches
         priming_latches, first = first[:npl], first[npl:]
         # if there are any left, stick them back where we got them
         self.latch_queue.appendleft(first)
         self.latch_queue_len -= len(priming_latches)
 
         firmware = make_firmware(priming_latches.reshape(-1),
-            apu_freq_basic=self.apu_freq_basic,
-            apu_freq_advanced=self.apu_freq_advanced)
+            apu_freq_basic=apu_freq_basic,
+            apu_freq_advanced=apu_freq_advanced)
 
         status_cb("Connecting to TASHA...")
         bootloader = bootload.Bootloader()
