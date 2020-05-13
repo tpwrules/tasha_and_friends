@@ -103,6 +103,7 @@ class ErrorCode(IntEnum):
     BAD_CRC = 0x02
     RX_ERROR = 0x03
     RX_TIMEOUT = 0x04
+    BAD_STREAM_POS = 0x05
     # this code and after are fatal errors
     FATAL_ERROR_START = 0x40
     BUFFER_UNDERRUN = 0x40
@@ -346,50 +347,26 @@ def send_status_packet():
 def cmd_send_latches():
     lp = "_{}_".format(random.randrange(2**32))
     r = RegisterManager(
-        "R7:lr R6:comm_word R5:rxlr R4:temp "
-        "R3:stream_pos R2:length R1:input_stream_pos R0:vars")
+        "R7:lr R6:comm_word R5:error_code R4:stream_pos "
+        "R3:buf_head R2:length R1:input_stream_pos R0:vars")
     fw = [
     L("cmd_send_latches"),
-        # the host might be sending latches that we already have, so we have to
-        # throw them away to avoid duplicates.
         MOVR(r.vars, "vars"),
+        LD(r.buf_head, r.vars, Vars.buf_head),
+        # the host needs to send us latches that fit at the end of our buffer.
+        # if there is a mismatch in stream position, this won't work.
         LD(r.stream_pos, r.vars, Vars.stream_pos),
-    L(lp+"eat_dupes"),
-        # keep the interface full
-        JAL(r.lr, "update_interface"),
-
-        # do the stream positions match yet?
         CMP(r.stream_pos, r.input_stream_pos),
-        BEQ(lp+"done_eating_dupes"), # yup, we're done
-        # nope, receive a latch and throw it away
-        JAL(r.rxlr, "rx_comm_word"),
-        JAL(r.rxlr, "rx_comm_word"),
-        JAL(r.rxlr, "rx_comm_word"),
-        JAL(r.rxlr, "rx_comm_word"),
-        JAL(r.rxlr, "rx_comm_word"),
-        # input stream pos is advanced by one more
-        ADDI(r.input_stream_pos, r.input_stream_pos, 1),
-        # do we have any latches remaining?
-        SUBI(r.length, r.length, 1),
-        BNZ(lp+"eat_dupes"), # yup, go eat more
-    ]
-    r -= "stream_pos"
-    r += "R3:buf_head"
-    fw.append([
-        # nope, we don't. load the head so we can save it correctly.
-        LD(r.buf_head, r.vars, Vars.buf_head),
-        # and reload the stream position because we didn't reach it above.
-        LD(r.input_stream_pos, r.vars, Vars.stream_pos),
-        J(lp+"loop_done"),
+        BEQ(lp+"right_pos"),
 
-    L(lp+"done_eating_dupes"),
-        # we assume we have space at the head
-        LD(r.buf_head, r.vars, Vars.buf_head),
-    ])
-    r -= "vars"
-    r += "R0:buf_addr"
+        MOVI(r.error_code, ErrorCode.BAD_STREAM_POS),
+        J("handle_error"),
+    ]
+    r -= "vars stream_pos error_code"
+    r += "R0:buf_addr R4:temp R5:rxlr"
     fw.append([
-        # figure out its address
+    L(lp+"right_pos"),
+        # we assume we have space at the head. figure out its address
         SLLI(r.buf_addr, r.buf_head, 2),
         ADD(r.buf_addr, r.buf_addr, r.buf_head),
         ADDI(r.buf_addr, r.buf_addr, LATCH_BUF_START),

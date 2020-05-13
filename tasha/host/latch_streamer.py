@@ -42,6 +42,7 @@ error_codes = {
     0x02: "bad CRC",
     0x03: "receive error/overflow",
     0x04: "receive timeout",
+    0x05: "incorrect stream position",
 
     0x40: "buffer underrun",
     0x41: "missed latch",
@@ -249,7 +250,7 @@ class LatchStreamer:
                 if is_fatal:
                     msg = "FATAL ERROR: "
                 else:
-                    msg = "ERROR: "
+                    msg = "COMM ERROR: "
                 msg += error_codes.get(p_error, str(p_error))
 
                 status_cb(msg)
