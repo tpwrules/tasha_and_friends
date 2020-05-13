@@ -251,9 +251,11 @@ def f_update_interface():
     r += "R5:error_code"
     fw.append([
     L(lp+"empty"), # the buffer is empty so we are screwed
+        ADJW(8),
         MOVI(r.error_code, ErrorCode.BUFFER_UNDERRUN),
         J("handle_error"),
     L(lp+"missed"), # we missed a latch so we are screwed
+        ADJW(8),
         MOVI(r.error_code, ErrorCode.MISSED_LATCH),
         J("handle_error"),
     ])
@@ -513,6 +515,126 @@ def rx_comm_word():
 
     return fw
 
+def rx_header():
+    lp = "_{}_".format(random.randrange(2**32))
+    r = RegisterManager(
+        "R7:lr R6:comm_word R5:error_code R4:temp "
+        "R0:vars")
+    fw = [
+    L("rx_header"),
+        # is there an active error?
+        MOVR(r.vars, "vars"),
+        LD(r.error_code, r.vars, Vars.last_error),
+        CMPI(r.error_code, ErrorCode.NONE),
+        BNE(lp+"in_error"), # yup, handle that separately
+    ]
+    fw.append([
+        # here there isn't, so we are careful to check for errors and raise them
+        # appropriately. we also are sure to keep the interface up to date. the
+        # only error we generate here is invalid command if one of the bytes is
+        # wrong.
+        MOVI(r.error_code, ErrorCode.INVALID_COMMAND),
+        MOVR(r.lr, lp+"rx_header_lo"), # return here from update_interface
+    L(lp+"rx_header_lo"), # the 0x5A
+        LDXA(r.temp, p_map.uart.r_error),
+        CMPI(r.temp, 2), # is there only a timeout error?
+        BEQ("main_loop"), # yup. rerun the main loop to reset everything
+        AND(r.temp, r.temp, r.temp),
+        BZ0("rcw_error"), # if there's some other error, raise the alarm
+
+        # receive the byte and complain if it doesn't match
+        LDXA(r.comm_word, p_map.uart.r_rx_hi),
+        ADD(r.comm_word, r.comm_word, r.comm_word),
+        BC1("update_interface"), # update the interface if nothing's come yet
+
+        CMPI(r.comm_word, 0x5A << 8),
+        BNE("handle_error"), # the error was already loaded
+
+        MOVR(r.lr, lp+"rx_header_hi"), # return here from update_interface
+    L(lp+"rx_header_hi"), # the 0x7A this time
+        LDXA(r.temp, p_map.uart.r_error),
+        # timeouts aren't accepted on the second byte.
+        AND(r.temp, r.temp, r.temp),
+        BZ0("rcw_error"), # if there's an error, raise the alarm.
+
+        # receive the byte and complain if it doesn't match
+        LDXA(r.comm_word, p_map.uart.r_rx_hi),
+        ADD(r.comm_word, r.comm_word, r.comm_word),
+        BC1("update_interface"), # update the interface if nothing's come yet
+
+        CMPI(r.comm_word, 0x5A << 8), # if we got the low byte instead
+        BEQ(lp+"rx_header_hi"), # wait for the high byte again
+        CMPI(r.comm_word, 0x7A << 8), # complain if it wasn't right
+        BNE("handle_error"),
+
+    L(lp+"got_it"),
+        # the header was received and it's good. get back to the action (after
+        # tending to the interface again)
+        MOVR(r.lr, "main_loop_after_header"),
+        J("update_interface"),
+    ])
+    r -= "vars"
+    r += "R3:update_time R2:header_curr R1:header_hi R0:header_lo"
+    fw.append([
+    L(lp+"in_error"),
+        # in an error state, we could be off by a byte and thus the RX buffer is
+        # filled with junk. we only have at most 15 instructions per byte, and
+        # we're already dealing  with an error, so we don't raise errors here.
+        # load the header parts into registers to save EXTIs
+        MOVI(r.header_hi, 0x7A << 8),
+        MOVI(r.header_lo, 0x5A << 8),
+        # we receive the low byte first
+        MOV(r.header_curr, r.header_lo),
+    L(lp+"rx_start"),
+        # we receive 10 bytes before checking on the interface
+        MOVI(r.update_time, 12),
+    L(lp+"rx_something"),
+        SUBI(r.update_time, r.update_time, 1),
+        BZ(lp+"update"), # it's time to check
+        # we don't care about errors at all, just receiving the right thing
+        LDXA(r.comm_word, p_map.uart.r_rx_hi),
+        ADD(r.comm_word, r.comm_word, r.comm_word),
+        BC1(lp+"rx_something"), # nothing yet
+
+        CMP(r.header_curr, r.header_hi),
+        BEQ(lp+"wait_hi"), # go handle waiting for the high byte separately
+        # if we are waiting for the low byte
+        CMP(r.comm_word, r.header_lo), # did we get the low byte?
+        BNE(lp+"rx_something"), # nope, try again
+        # we did, so start waiting for the high byte
+        MOV(r.header_curr, r.header_hi),
+        J(lp+"rx_something"),
+
+    L(lp+"wait_hi"),
+        # did we actually get a low byte?
+        CMP(r.comm_word, r.header_lo),
+        BEQ(lp+"rx_something"), # go back waiting for the high byte
+        # did we then get the high byte we wanted?
+        CMP(r.comm_word, r.header_hi),
+        BEQ(lp+"got_hi"), # yes, header received!
+        # nope. wait for low again
+        MOV(r.header_curr, r.header_lo),
+        J(lp+"rx_something"),
+
+    L(lp+"got_hi"),
+        # clear out any error in the UART
+        MOVI(r.temp, 0xFFFF),
+        STXA(r.temp, p_map.uart.w_error_clear),
+        J(lp+"got_it"),
+
+    L(lp+"update"),
+        JAL(r.lr, "update_interface"),
+        # is it time to send a status packet? sending a status packet is kind of
+        # lame because it will go back to the main loop and so reset to the low
+        # byte. but it gets sent relatively rarely so we accept that problem.
+        LDXA(r.temp, p_map.timer.timer[0].r_ended),
+        AND(r.temp, r.temp, r.temp),
+        BZ1(lp+"rx_start"), # the timer is still going, so no
+        J("send_status_packet"),
+    ])
+
+    return fw
+
 def main_loop_body():
     lp = "_{}_".format(random.randrange(2**32))
     r = RegisterManager(
@@ -532,38 +654,13 @@ def main_loop_body():
         MOVI(r.temp, 0xFFFF),
         STXA(r.temp, p_map.uart.w_error_clear),
 
-        # wait for the low header byte 0x5A. if we time out here, we just wait
-        # some more.
-        MOVR(r.lr, "rx_header_lo"),
-    L("rx_header_lo"),
-        LDXA(r.temp, p_map.uart.r_error),
-        CMPI(r.temp, 2),
-        BEQ("main_loop"),
-        AND(r.temp, r.temp, r.temp),
-        BZ0("rcw_error"),
-        
-        # receive the byte and go complain if it doesn't match
-        LDXA(r.comm_word, p_map.uart.r_rx_hi),
-        ADD(r.comm_word, r.comm_word, r.comm_word),
-        BC1("update_interface"), # update the interface if nothing's come yet
+        # receive the header. this handles all the header-related problems too
+        # (and trashes all the registers incidentally)
+        J("rx_header"),
+        # and it returns here
+    L("main_loop_after_header"),
 
-        CMPI(r.comm_word, 0x5A << 8),
-        BNE(lp+"header_bad"),
-
-        MOVI(r.comm_word, 0),
-    L("rx_header_hi"),
-        # now receive the actual high byte 0x7A
-        JAL(r.rxlr, "rx_comm_byte_hi"),
-        # keep the interface full
-        JAL(r.lr, "update_interface"),
-        # if we actually received the low byte, look for the high byte again
-        CMPI(r.comm_word, 0x5A << 8),
-        BEQ("rx_header_hi"),
-        # if we didn't receive the high byte, go complain
-        CMPI(r.comm_word, 0x7A << 8),
-        BNE(lp+"header_bad"),
-
-        # we have confirmed both header bytes. who knows what the CRC is now.
+        # who knows what the CRC is now after receiving whatever header data
         STXA(r.temp, p_map.uart.w_crc_reset), # write something to reset it
 
         # receive the command packet
@@ -595,10 +692,6 @@ def main_loop_body():
     L(lp+"crc_bad"),
         # aw heck, it didn't go okay. send the appropriate error.
         MOVI(r.error_code, ErrorCode.BAD_CRC),
-        J("handle_error"),
-
-    L(lp+"header_bad"),
-        MOVI(r.error_code, ErrorCode.INVALID_COMMAND),
         J("handle_error"),
 
     L(lp+"crc_ok"),
@@ -751,6 +844,9 @@ def make_firmware(priming_latches=[],
     L("update_interface"),
         f_update_interface(),
     ])
+
+    # header reception is called once so we stick it far away
+    fw.append(rx_header())
 
     # assemble just the code region
     assembled_fw = Instr.assemble(fw)
