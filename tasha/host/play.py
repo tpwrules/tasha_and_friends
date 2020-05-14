@@ -28,7 +28,7 @@ def read_latches(num_latches):
     # people only use at max 4. it's also big endian, unlike everything else.
     data = latch_file.read(num_latches*16)
     if len(data) == 0:
-        return np.zeros((num_latches, 5), dtype=np.uint16)
+        return None # the file is over
     data = np.frombuffer(data, dtype='>u2').reshape(-1, 8)
     # take out the controllers that matter and leave empty (i.e. garbage) the
     # currently unused APU frequency word
@@ -62,8 +62,13 @@ elif args.blank < 0:
 num_priming_latches = 2500
 print("Loading priming latches...")
 while latch_streamer.latch_queue_len < num_priming_latches:
-    latch_streamer.add_latches(read_latches(
-        num_priming_latches-latch_streamer.latch_queue_len))
+    latches = read_latches(num_priming_latches-latch_streamer.latch_queue_len)
+    if latches is None: # no more latches already?
+        # oh well. send the ones we have. when the stream loop asks for more it
+        # will get None again and start shutting everything down
+        num_priming_latches = latch_streamer.latch_queue_len
+        break
+    latch_streamer.add_latches(latches)
 
 printer = StatusPrinter()
 latch_streamer.connect(args.port, status_cb=printer.status_cb,

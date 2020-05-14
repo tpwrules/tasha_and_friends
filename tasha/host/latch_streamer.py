@@ -46,6 +46,8 @@ class ConnectionMessage(Message, enum.Enum):
     BUILDING = 3
     DOWNLOADING = 4
     CONNECTED = 5
+    TRANSFER_DONE = 6
+    BUFFER_DONE = 7
 
     def __str__(self):
         if self == ConnectionMessage.CONNECTING:
@@ -58,6 +60,10 @@ class ConnectionMessage(Message, enum.Enum):
             return "Downloading and starting firmware..."
         elif self == ConnectionMessage.CONNECTED:
             return "Initialization complete! Beginning latch transfer..."
+        elif self == ConnectionMessage.TRANSFER_DONE:
+            return "Transfer complete! Waiting for device buffer to empty..."
+        elif self == ConnectionMessage.BUFFER_DONE:
+            return "All latches successfully latched! Thanks for playing!"
         else:
             raise Exception("unknown identity {}".format(self))
 
@@ -128,6 +134,10 @@ class ConnectionState(enum.Enum):
     INITIALIZING = 1
     # connected and everything is going well
     TRANSFERRING = 2
+    # we're finishing up by emptying the host latch queue
+    EMPTYING_HOST = 3
+    # we're finishing up by waiting for the device to empty its buffer
+    EMPTYING_DEVICE = 4
 
 class LatchStreamer:
     def __init__(self):
@@ -136,12 +146,24 @@ class LatchStreamer:
         # the queue is composed of arrays with many latches in each. keep track
         # of how many latches total are in there.
         self.latch_queue_len = 0
-        self.connection_state = ConnectionState.DISCONNECTED
+        self.conn_state = ConnectionState.DISCONNECTED
 
         # everything else will be initialized upon connection
 
-    # Add some latches to the stream queue.
+    # Add some latches to the stream queue. If latches is None, the latches are
+    # assumed to be finished and the streamer transitions to waiting for the
+    # buffers to empty. If it's not None, then normal operation resumes.
     def add_latches(self, latches):
+        if latches is None:
+            if self.conn_state in (ConnectionState.INITIALIZING,
+                    ConnectionState.TRANSFERRING):
+                self.conn_state = ConnectionState.EMPTYING_HOST
+            return
+        elif self.conn_state != ConnectionState.TRANSFERRING:
+            if self.conn_state in (ConnectionState.EMPTYING_HOST,
+                    ConnectionState.EMPTYING_DEVICE):
+                self.conn_state = ConnectionState.TRANSFERRING
+
         if not isinstance(latches, np.ndarray):
             raise TypeError("'latches' must be ndarray, not {!r}".format(
                 type(latches)))
@@ -153,7 +175,7 @@ class LatchStreamer:
                 latches.dtype))
 
         if len(latches) == 0: # no point in storing no latches
-            return self.latch_queue_len
+            return
 
         # copy the array so we don't have to worry that the caller will do
         # something weird to it. we need to send the data in C order, so we make
@@ -172,7 +194,7 @@ class LatchStreamer:
             num_priming_latches=None,
             apu_freq_basic=None,
             apu_freq_advanced=None):
-        if self.connection_state != ConnectionState.DISCONNECTED:
+        if self.conn_state != ConnectionState.DISCONNECTED:
             raise ValueError("already connected")
 
         if num_priming_latches is None:
@@ -241,7 +263,7 @@ class LatchStreamer:
         self.resend_buf_len = 0
 
         self.status_cb = status_cb
-        self.connection_state = ConnectionState.INITIALIZING
+        self.conn_state = ConnectionState.INITIALIZING
 
     # get some latches from the latch queue and return the converted to bytes.
     # may return less than at_least if not enough latches are available. if
@@ -306,9 +328,10 @@ class LatchStreamer:
         return packet
 
     # Call repeatedly to perform communication. Reads messages from TASHA and
-    # sends latches back out.
+    # sends latches back out. Returns True if still connected and False to say
+    # that the connection has terminated.
     def communicate(self):
-        if self.connection_state == ConnectionState.DISCONNECTED:
+        if self.conn_state == ConnectionState.DISCONNECTED:
             raise ValueError("you must connect before communicating")
 
         status_cb = self.status_cb
@@ -322,21 +345,41 @@ class LatchStreamer:
 
         # if we got a packet, parse it
         if packet is not None:
-            if self.connection_state == ConnectionState.INITIALIZING:
+            if self.conn_state == ConnectionState.INITIALIZING:
                 # let the user know the device is alive
                 status_cb(ConnectionMessage.CONNECTED)
-                self.connection_state = ConnectionState.TRANSFERRING
+                self.conn_state = ConnectionState.TRANSFERRING
 
             p_error, p_stream_pos, p_buffer_space = packet
 
+            if self.conn_state == ConnectionState.EMPTYING_HOST:
+                # do we have anything more to send to the device? did it get
+                # everything we sent?
+                stuff_in_transit = self.stream_pos != p_stream_pos
+                if len(self.latch_queue) == 0 and not stuff_in_transit:
+                    # yup, we are done sending. now we wait for the device's
+                    # buffer to be emptied.
+                    self.conn_state = ConnectionState.EMPTYING_DEVICE
+                    status_cb(ConnectionMessage.TRANSFER_DONE)
+
             # if there is an error, we need to intervene.
             if p_error != 0:
-                msg = DeviceErrorMessage(ErrorCode(p_error))
+                error = ErrorCode(p_error)
+                if error == ErrorCode.BUFFER_UNDERRUN and \
+                        self.conn_state == ConnectionState.EMPTYING_DEVICE:
+                    # if we're waiting for the device buffer to empty, it's just
+                    # happened and we are done with our job
+                    status_cb(ConnectionMessage.BUFFER_DONE)
+                    self.disconnect()
+                    return False
+
+                msg = DeviceErrorMessage(error)
                 status_cb(msg)
 
-                # we can't do anything for fatal errors
+                # we can't do anything for fatal errors except disconnect
                 if msg.is_fatal:
-                    raise Exception("fatal error :(")
+                    self.disconnect()
+                    return False
 
                 # but if it's not, we will restart transmission at the last
                 # position the device got so it can pick the stream back up.
@@ -376,6 +419,10 @@ class LatchStreamer:
             # queue that many for transmission. we don't send less than 20
             # because it's kind of a waste of time.
             actual_sent = 0
+            # filling the device's buffer with latches is counterproductive to
+            # emptying it
+            if self.conn_state == ConnectionState.EMPTYING_DEVICE:
+                actual_buffer_space = 0 # stop anything from being sent
             while actual_buffer_space >= 20:
                 # we'd like to send at least 20 latches to avoid too much packet
                 # overhead, but not more than 200 to avoid having to resend a
@@ -386,7 +433,7 @@ class LatchStreamer:
                 num_sent = len(latch_data)//10
                 actual_sent += num_sent
 
-                if num_sent == 0: break # queue was empty.
+                if num_sent == 0: break # queue was empty
 
                 # send the latch transmission command
                 cmd = struct.pack("<5H",
@@ -451,9 +498,10 @@ class LatchStreamer:
                 # yup, we are done with this chunk
                 self.out_curr_chunk = None
 
+        return True # everything's still going good
 
     def disconnect(self):
-        if self.connection_state == ConnectionState.DISCONNECTED:
+        if self.conn_state == ConnectionState.DISCONNECTED:
             return
 
         # close and delete buffers to avoid hanging on to junk
@@ -466,4 +514,4 @@ class LatchStreamer:
         del self.resend_buf
         del self.status_cb
 
-        self.connection_state = ConnectionState.DISCONNECTED
+        self.conn_state = ConnectionState.DISCONNECTED

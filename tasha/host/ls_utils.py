@@ -45,12 +45,25 @@ class StatusPrinter:
             self.latches_sent = 0
             self.last_time = now
 
-# get latches and stream them
+# get latches and stream them. if read_latches returns None, it assumes we're
+# out of latches and does the finishing sequence
 def stream_loop(latch_streamer, read_latches):
-    while True:
-        while latch_streamer.latch_queue_len < 10000:
-            latch_streamer.add_latches(read_latches(10000))
+    finished = False
 
-        latch_streamer.communicate()
+    while latch_streamer.communicate():
+        # try and get some latches. 10k is about half a second at max rates
+        if not finished:
+            if latch_streamer.latch_queue_len < 10000:
+                latches = read_latches(10000)
+                latch_streamer.add_latches(latches)
+                if latches is None: # just told the latch streamer to stop
+                    finished = True
+
+        # if we're not getting latches fast enough, spin until we do
+        while not finished and latch_streamer.latch_queue_len < 1000:
+            latches = read_latches(10000)
+            latch_streamer.add_latches(latches)
+            if latches is None: # just told the latch streamer to stop
+                finished = True
 
         time.sleep(0.01)
