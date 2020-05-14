@@ -3,7 +3,8 @@ import time
 
 import numpy as np
 
-from .latch_streamer import LatchStreamer, LATCH_BUF_SIZE
+from .latch_streamer import ( LatchStreamer, LATCH_BUF_SIZE, Message,
+    ConnectionMessage, DeviceErrorMessage, StatusMessage )
 from ..gateware.apu_calc import calculate_advanced
 
 parser = argparse.ArgumentParser(description='Play back a TAS using TASHA.')

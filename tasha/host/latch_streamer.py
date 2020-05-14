@@ -26,6 +26,7 @@ import struct
 import random
 import collections
 import itertools
+import enum
 
 import numpy as np
 import serial
@@ -35,17 +36,89 @@ crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 from ..firmware.latch_streamer import make_firmware, LATCH_BUF_SIZE, ErrorCode
 from . import bootload
 
-error_codes = {
-    ErrorCode.NONE: "success",
-    ErrorCode.INVALID_COMMAND: "invalid command",
-    ErrorCode.BAD_CRC: "bad CRC",
-    ErrorCode.RX_ERROR: "receive error/overflow",
-    ErrorCode.RX_TIMEOUT: "receive timeout",
-    ErrorCode.BAD_STREAM_POS: "incorrect stream position",
+# status_cb is called with Messages of the appropriate subclass
+class Message:
+    pass
 
-    ErrorCode.BUFFER_UNDERRUN: "buffer underrun",
-    ErrorCode.MISSED_LATCH: "missed latch",
-}
+class ConnectionMessage(Message, enum.Enum):
+    CONNECTING = 1
+    NOT_RESPONDING = 2
+    BUILDING = 3
+    DOWNLOADING = 4
+    CONNECTED = 5
+
+    def __str__(self):
+        if self == ConnectionMessage.CONNECTING:
+            return "Connecting to TASHA..."
+        elif self == ConnectionMessage.NOT_RESPONDING:
+            return "    (no response, please reset TASHA)"
+        elif self == ConnectionMessage.BUILDING:
+            return "Building firmware..."
+        elif self == ConnectionMessage.DOWNLOADING:
+            return "Downloading and starting firmware..."
+        elif self == ConnectionMessage.CONNECTED:
+            return "Initialization complete! Beginning latch transfer..."
+        else:
+            raise Exception("unknown identity {}".format(self))
+
+class DeviceErrorMessage(Message): # messages returned from the device
+    def __init__(self, code):
+        if not isinstance(code, ErrorCode):
+            raise TypeError("must be an ErrorCode")
+        self.code = code
+        self.is_fatal = code >= ErrorCode.FATAL_ERROR_START
+
+    def __str__(self):
+        if self.is_fatal:
+            m = "FATAL ERROR: "
+        else:
+            m = "COMM ERROR: "
+
+        if self.code == ErrorCode.NONE:
+            return m + "success"
+        elif self.code == ErrorCode.INVALID_COMMAND:
+            return m + "invalid command"
+        elif self.code == ErrorCode.BAD_CRC:
+            return m + "bad CRC"
+        elif self.code == ErrorCode.RX_ERROR:
+            return m + "receive error/overflow"
+        elif self.code == ErrorCode.RX_TIMEOUT:
+            return m + "receive timeout"
+        elif self.code == ErrorCode.BAD_STREAM_POS:
+            return m + "incorrect stream position"
+        elif self.code == ErrorCode.BUFFER_UNDERRUN:
+            return m + "buffer underrun"
+        elif self.code == ErrorCode.MISSED_LATCH:
+            return m + "missed latch"
+
+class InvalidPacketMessage(Message):
+    def __init__(self, packet):
+        self.packet = packet
+
+    def __str__(self):
+        return "WARNING: invalid packet received: {!r}".format(self.packet)
+
+# sent every processed status packet
+class StatusMessage(Message):
+    # buffer_use: how much buffer on the device is used in latches
+    # buffer_size: total device buffer size in latches
+    # device_pos: stream position the device reported, mod 65536
+    # pc_pos: stream position we (on the PC) are at, mod 65536
+    # sent: number of latches sent in response
+    # in_transit: number of latches in transit (sent last time but not arrived)
+    def __init__(self, buffer_use, buffer_size,
+            device_pos, pc_pos, sent, in_transit):
+        self.buffer_use = buffer_use
+        self.buffer_size = buffer_size
+        self.device_pos = device_pos
+        self.pc_pos = pc_pos
+        self.sent = sent
+        self.in_transit = in_transit
+
+    def __str__(self):
+        return "D:{:05d}<-P:{:05d} B:{:05d} T:{:05d} S:{:05d}".format(
+            self.device_pos, self.pc_pos, self.buffer_size-self.buffer_use,
+            self.in_transit, self.sent)
 
 class LatchStreamer:
     def __init__(self):
@@ -103,21 +176,25 @@ class LatchStreamer:
                 "available in the queue".format(
                     num_priming_latches, self.latch_queue_len))
 
-        status_cb("Connecting to TASHA...")
+        status_cb(ConnectionMessage.CONNECTING)
         bootloader = bootload.Bootloader()
 
         # assume the board is responsive and will get back to us quickly
         try:
             bootloader.connect(port, timeout=1)
+            connected_quickly = True
         except bootload.Timeout: # it isn't
+            connected_quickly = False
+
+        if not connected_quickly:
             # ask the user to try and reset the board, then wait for however
             # long it takes for the bootloder to start
-            status_cb("    (no response, please reset TASHA)")
+            status_cb(ConnectionMessage.NOT_RESPONDING)
             bootloader.connect(port, timeout=None)
 
         bootloader.identify()
 
-        status_cb("Building firmware...")
+        status_cb(ConnectionMessage.BUILDING)
 
         # get the priming latch data and convert it back to words. kinda
         # inefficient but we only do it once.
@@ -129,7 +206,7 @@ class LatchStreamer:
             apu_freq_basic=apu_freq_basic,
             apu_freq_advanced=apu_freq_advanced)
 
-        status_cb("Downloading and starting firmware...")
+        status_cb(ConnectionMessage.DOWNLOADING)
         firmware = tuple(firmware)
         bootloader.write_memory(0, firmware)
         read_firmware = bootloader.read_memory(0, len(firmware))
@@ -209,8 +286,7 @@ class LatchStreamer:
             # is the packet valid?
             if crc_16_kermit(packet_data[2:]) != 0:
                 # nope. throw away the header. maybe a packet starts after it.
-                self.status_cb("WARNING: invalid packet received: {!r}".format(
-                    packet_data))
+                self.status_cb(InvalidPacketMessage(packet_data))
                 self.in_chunks = self.in_chunks[pos+2:]
             else:
                 # it is. parse the useful bits from it
@@ -238,24 +314,19 @@ class LatchStreamer:
         # if we got a packet, parse it
         if packet is not None:
             if self.got_first_packet is False:
-                print("Initialization complete! Beginning latch transfer...")
+                # let the user know the device is alive
+                status_cb(ConnectionMessage.CONNECTED)
                 self.got_first_packet = True
 
             p_error, p_stream_pos, p_buffer_space = packet
 
             # if there is an error, we need to intervene.
             if p_error != 0:
-                is_fatal = p_error >= ErrorCode.FATAL_ERROR_START
-                if is_fatal:
-                    msg = "FATAL ERROR: "
-                else:
-                    msg = "COMM ERROR: "
-                msg += error_codes.get(p_error, str(p_error))
-
+                msg = DeviceErrorMessage(ErrorCode(p_error))
                 status_cb(msg)
 
                 # we can't do anything for fatal errors
-                if is_fatal:
+                if msg.is_fatal:
                     raise Exception("fatal error :(")
 
                 # but if it's not, we will restart transmission at the last
@@ -292,17 +363,13 @@ class LatchStreamer:
             # device's buffer because those latches will shortly end up there
             # and we don't want to overflow it
             actual_buffer_space = p_buffer_space - in_transit
-            if actual_buffer_space < 20:
-                # don't bother sending so few latches, or even printing the
-                # status message.
-                pass
-            else:
-                msg = "  D:{:05d}<-P:{:05d} B:{:05d} T:{:05d} S:{:05d}".format(
-                    p_stream_pos, self.stream_pos, p_buffer_space,
-                    in_transit, actual_buffer_space)
-                status_cb(msg)
 
-            # queue that many for transmission
+            status_cb(StatusMessage(LATCH_BUF_SIZE-p_buffer_space-1,
+                LATCH_BUF_SIZE-1, p_stream_pos, self.stream_pos,
+                actual_buffer_space, in_transit))
+
+            # queue that many for transmission. we don't send less than 20
+            # because it's kind of a waste of time.
             while actual_buffer_space >= 20:
                 # we'd like to send at least 20 latches to avoid too much packet
                 # overhead, but not more than 200 to avoid having to resend a
