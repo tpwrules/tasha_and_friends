@@ -32,20 +32,19 @@ import serial
 import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 
-from ..firmware.latch_streamer import make_firmware, LATCH_BUF_SIZE
+from ..firmware.latch_streamer import make_firmware, LATCH_BUF_SIZE, ErrorCode
 from . import bootload
 
-# todo: gross
 error_codes = {
-    0x00: "success",
-    0x01: "invalid command",
-    0x02: "bad CRC",
-    0x03: "receive error/overflow",
-    0x04: "receive timeout",
-    0x05: "incorrect stream position",
+    ErrorCode.NONE: "success",
+    ErrorCode.INVALID_COMMAND: "invalid command",
+    ErrorCode.BAD_CRC: "bad CRC",
+    ErrorCode.RX_ERROR: "receive error/overflow",
+    ErrorCode.RX_TIMEOUT: "receive timeout",
+    ErrorCode.BAD_STREAM_POS: "incorrect stream position",
 
-    0x40: "buffer underrun",
-    0x41: "missed latch",
+    ErrorCode.BUFFER_UNDERRUN: "buffer underrun",
+    ErrorCode.MISSED_LATCH: "missed latch",
 }
 
 class LatchStreamer:
@@ -246,7 +245,7 @@ class LatchStreamer:
 
             # if there is an error, we need to intervene.
             if p_error != 0:
-                is_fatal = p_error >= 0x40
+                is_fatal = p_error >= ErrorCode.FATAL_ERROR_START
                 if is_fatal:
                     msg = "FATAL ERROR: "
                 else:
