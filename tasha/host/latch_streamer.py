@@ -364,12 +364,9 @@ class LatchStreamer:
             # and we don't want to overflow it
             actual_buffer_space = p_buffer_space - in_transit
 
-            status_cb(StatusMessage(LATCH_BUF_SIZE-p_buffer_space-1,
-                LATCH_BUF_SIZE-1, p_stream_pos, self.stream_pos,
-                actual_buffer_space, in_transit))
-
             # queue that many for transmission. we don't send less than 20
             # because it's kind of a waste of time.
+            actual_sent = 0
             while actual_buffer_space >= 20:
                 # we'd like to send at least 20 latches to avoid too much packet
                 # overhead, but not more than 200 to avoid having to resend a
@@ -378,6 +375,7 @@ class LatchStreamer:
                 latch_data = self._get_latch_data(
                     min(20, actual_buffer_space), min(200, actual_buffer_space))
                 num_sent = len(latch_data)//10
+                actual_sent += num_sent
 
                 if num_sent == 0: break # queue was empty.
 
@@ -417,6 +415,9 @@ class LatchStreamer:
                     self.resend_buf.popleft()
                     self.resend_buf_len -= oldest_len
 
+            status_cb(StatusMessage(LATCH_BUF_SIZE-p_buffer_space-1,
+                LATCH_BUF_SIZE-1, p_stream_pos, self.stream_pos,
+                actual_sent, in_transit))
 
         # send out the data we prepared earlier
         while True:

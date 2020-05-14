@@ -13,6 +13,7 @@ import time
 import numpy as np
 
 from tasha.host.latch_streamer import LatchStreamer, LATCH_BUF_SIZE
+from tasha.host.ls_utils import StatusPrinter, stream_loop
 
 def bitswap(b):
     b = (b&0xF0) >> 4 | (b&0x0F) << 4
@@ -181,13 +182,8 @@ while latch_streamer.latch_queue_len < num_priming_latches:
     latch_streamer.add_latches(read_latches(
         num_priming_latches-latch_streamer.latch_queue_len))
 
-latch_streamer.connect(sys.argv[1], status_cb=print,
+printer = StatusPrinter()
+latch_streamer.connect(sys.argv[1], status_cb=printer.status_cb,
     num_priming_latches=num_priming_latches)
 
-while True:
-    while latch_streamer.latch_queue_len < 10000:
-        latch_streamer.add_latches(read_latches(10000))
-
-    latch_streamer.communicate()
-
-    time.sleep(0.01)
+stream_loop(latch_streamer, read_latches)
