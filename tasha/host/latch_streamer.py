@@ -120,6 +120,15 @@ class StatusMessage(Message):
             self.device_pos, self.pc_pos, self.buffer_size-self.buffer_use,
             self.in_transit, self.sent)
 
+# how the communication is proceeding
+class ConnectionState(enum.Enum):
+    # ... no connection
+    DISCONNECTED = 0
+    # connect()ed but we haven't got the status packet back
+    INITIALIZING = 1
+    # connected and everything is going well
+    TRANSFERRING = 2
+
 class LatchStreamer:
     def __init__(self):
         self.connected = False
@@ -127,6 +136,7 @@ class LatchStreamer:
         # the queue is composed of arrays with many latches in each. keep track
         # of how many latches total are in there.
         self.latch_queue_len = 0
+        self.connection_state = ConnectionState.DISCONNECTED
 
         # everything else will be initialized upon connection
 
@@ -162,7 +172,7 @@ class LatchStreamer:
             num_priming_latches=None,
             apu_freq_basic=None,
             apu_freq_advanced=None):
-        if self.connected is True:
+        if self.connection_state != ConnectionState.DISCONNECTED:
             raise ValueError("already connected")
 
         if num_priming_latches is None:
@@ -231,8 +241,7 @@ class LatchStreamer:
         self.resend_buf_len = 0
 
         self.status_cb = status_cb
-        self.connected = True
-        self.got_first_packet = False
+        self.connection_state = ConnectionState.INITIALIZING
 
     # get some latches from the latch queue and return the converted to bytes.
     # may return less than at_least if not enough latches are available. if
@@ -299,7 +308,7 @@ class LatchStreamer:
     # Call repeatedly to perform communication. Reads messages from TASHA and
     # sends latches back out.
     def communicate(self):
-        if self.connected is False:
+        if self.connection_state == ConnectionState.DISCONNECTED:
             raise ValueError("you must connect before communicating")
 
         status_cb = self.status_cb
@@ -313,10 +322,10 @@ class LatchStreamer:
 
         # if we got a packet, parse it
         if packet is not None:
-            if self.got_first_packet is False:
+            if self.connection_state == ConnectionState.INITIALIZING:
                 # let the user know the device is alive
                 status_cb(ConnectionMessage.CONNECTED)
-                self.got_first_packet = True
+                self.connection_state = ConnectionState.TRANSFERRING
 
             p_error, p_stream_pos, p_buffer_space = packet
 
@@ -444,7 +453,7 @@ class LatchStreamer:
 
 
     def disconnect(self):
-        if self.connected is False:
+        if self.connection_state == ConnectionState.DISCONNECTED:
             return
 
         # close and delete buffers to avoid hanging on to junk
@@ -457,4 +466,4 @@ class LatchStreamer:
         del self.resend_buf
         del self.status_cb
 
-        self.connected = False
+        self.connection_state = ConnectionState.DISCONNECTED
