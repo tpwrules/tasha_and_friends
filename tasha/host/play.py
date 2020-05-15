@@ -30,14 +30,11 @@ def read_latches(num_latches):
     if len(data) == 0:
         return None # the file is over
     data = np.frombuffer(data, dtype='>u2').reshape(-1, 8)
-    # take out the controllers that matter and leave empty (i.e. garbage) the
-    # currently unused APU frequency word
-    out = np.empty((data.shape[0], 5), dtype=np.uint16)
-    out[:, :4] = data[:, (0, 1, 4, 5)]
-    # then return it as a flattened array
-    return out
+    # take out the controllers that matter and convert to regular endian uint16
+    return data[:, (0, 1, 4, 5)].astype(np.uint16)
 
-latch_streamer = LatchStreamer()
+# default set of controllers and order. will soon be user-configurable.
+latch_streamer = LatchStreamer(controllers=["p1d0", "p1d1", "p2d0", "p2d1"])
 
 apu_freq_basic = None
 apu_freq_advanced = None

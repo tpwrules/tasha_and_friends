@@ -14,13 +14,15 @@
 
 # HOW IT WORKS
 
-# The TAS is composed of a long sequence of "latches". To us, these are 5 word
-# quantities that need to make it out to the hardware in time.
+# The TAS is composed of a long sequence of "latches". To us, these are C word
+# quantities (C is the number of controllers, up to six) that need to make it
+# out to the hardware in time.
 
-# Including controller information and APU frequency confguration, we need to be
-# able to stream around 1.4Mbits/s peak into the firmware. With a 1.6Mbits/s
-# maximum rate, this will be a bit tight. Complicating things is the fact that
-# the FTDI device imposes a 16ms device -> host latency.
+# Including 4 controllers and 1 APU frequency controller at 288 latches per
+# frame (the fastest known TAS), we need to be able to stream around 1.4Mbits/s
+# peak into the firmware. With a 1.6Mbits/s maximum rate, this will be a bit
+# tight. Complicating things is the fact that the FTDI device imposes a 16ms
+# device -> host latency.
 
 # To handle this, we have a very large ring buffer to hold latches. We keep
 # track of how much space remains in the buffer, plus the "stream position", a
@@ -32,13 +34,12 @@
 # current stream position and how much space there is in the buffer. Because of
 # the latency, the information is outdated as soon as it is sent. However, the
 # host knows its own stream position, so it can calculate how much data has
-# arrived and reduce the buffer space correspondingly
+# arrived and reduce the buffer space correspondingly. It then sends enough data
+# to fill up the device's buffer again.
 
 # If there is an error, then the firmware will immediately send a status packet
-# with the corresponding error code. In response, the host will cancel all
-# communications, wait 5ms (for all the buffers to empty and the firmware to
-# time out and reset the reception), then resume transmission at the stream
-# position sent in the error packet.
+# with the corresponding error code. In response, the host will resume
+# transmission at the stream position sent in the error packet.
 
 # playback command packet format:
 # first word: header (always 0x7A5A)
@@ -76,7 +77,7 @@
 #   purpose: send latch data.
 #
 #            there is no response once the command packet is received and
-#            validated. the firmware expects "number of latches"*5 words to
+#            validated. the firmware expects "number of latches"*C words to
 #            follow, and a CRC of them all. if there is a problem, an error
 #            status packet will be sent as described above.
 

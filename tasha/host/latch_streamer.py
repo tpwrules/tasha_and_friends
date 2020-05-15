@@ -1,12 +1,21 @@
 # stream latches out to the console through TASHA.
 
-# Latch format is an (n, 5) uint16 numpy ndarray, where n is the number of
-# latches in the array.
-#   Column 0: player 1 data 0
-#   Column 1: player 1 data 1
-#   Column 2: player 2 data 0
-#   Column 3: player 2 data 1
-#   Column 4: APU frequency control word
+# Latch format is an (n, C) uint16 numpy ndarray, where n is the number of
+# latches in the array and C is the number of controllers. The controller order
+# is set by the controllers list passed to the LatchStreamer constructor. The
+# list is a list of strings (described below) that name each controller. If
+# controllers[3] == "p2d0", then latches[:, 3] is expected to contain the
+# buttons for player 2 controller on data line 0. If there are duplicate
+# controllers, then the data with the greatest index is used. This does waste
+# bandwidth and memory on the unused data.
+
+# CONTROLLER NAMES
+#   "p1d0": player 1, data line 0 (controller pin 4)
+#   "p1d1": player 1, data line 1 (controller pin 5)
+#   "p2d0": player 2, data line 0 (controller pin 4)
+#   "p2d1": player 2, data line 1 (controller pin 5)
+#   "apu_freq_basic": basic APU frequency adjustment. see snes.py (reg 2)
+#   "apu_freq_advanced": advanced APU frequency adjustment. see snes.py (reg 3)
 
 # LATCH STREAMER SETTINGS (parameters to connect())
 
@@ -140,16 +149,7 @@ class ConnectionState(enum.Enum):
     EMPTYING_DEVICE = 4
 
 class LatchStreamer:
-    def __init__(self, controllers=None):
-        if controllers is None:
-            controllers = [
-                "p1d0",
-                "p1d1",
-                "p2d0",
-                "p2d1",
-                "apu_freq_basic",
-            ]
-
+    def __init__(self, controllers):
         self.controllers = controllers
         self.num_controllers = len(controllers)
         self.device_buf_size = calc_buf_size(self.num_controllers)

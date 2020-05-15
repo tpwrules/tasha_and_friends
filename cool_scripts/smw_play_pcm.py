@@ -12,7 +12,7 @@ import time
 
 import numpy as np
 
-from tasha.host.latch_streamer import LatchStreamer, LATCH_BUF_SIZE
+from tasha.host.latch_streamer import LatchStreamer
 from tasha.host.ls_utils import StatusPrinter, stream_loop
 
 def bitswap(b):
@@ -152,7 +152,7 @@ leftovers = None
 def read_latches(num_latches):
     global leftovers
     pcm_data = sys.stdin.buffer.read(num_latches*8)
-    # we can only process one latch (4 samples) at a time
+    # we can only process whole latches (4 samples) at a time
     if leftovers is not None:
         pcm_data = leftovers + pcm_data
         leftovers = None
@@ -168,13 +168,10 @@ def read_latches(num_latches):
     twiddled_bits = pcm_bits[:, twiddle_table]
     # convert the bits back to buttons
     latch_data = np.packbits(twiddled_bits).view(np.uint16).reshape(-1, 4)
-    # add the 5th column, which is the APU frequency control word
-    out = np.empty((latch_data.shape[0], 5), dtype=np.uint16)
-    out[:, :4] = latch_data
+    # and now it's ready for the console
+    return latch_data
 
-    return out
-
-latch_streamer = LatchStreamer()
+latch_streamer = LatchStreamer(controllers=["p1d0", "p1d1", "p2d0", "p2d1"])
 # enough priming latches to tide us over even at max latch speed
 num_priming_latches = 2500
 print("Loading priming latches...")
