@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from .latch_streamer import LatchStreamer, LATCH_BUF_SIZE
+from .latch_streamer import LatchStreamer
 from .ls_utils import StatusPrinter, stream_loop
 from ..gateware.apu_calc import calculate_advanced
 

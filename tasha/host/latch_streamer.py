@@ -33,7 +33,7 @@ import serial
 import crcmod.predefined
 crc_16_kermit = crcmod.predefined.mkPredefinedCrcFun("kermit")
 
-from ..firmware.latch_streamer import make_firmware, LATCH_BUF_SIZE, ErrorCode
+from ..firmware.latch_streamer import make_firmware, calc_buf_size, ErrorCode
 from . import bootload
 
 # status_cb is called with Messages of the appropriate subclass
@@ -140,7 +140,20 @@ class ConnectionState(enum.Enum):
     EMPTYING_DEVICE = 4
 
 class LatchStreamer:
-    def __init__(self):
+    def __init__(self, controllers=None):
+        if controllers is None:
+            controllers = [
+                "p1d0",
+                "p1d1",
+                "p2d0",
+                "p2d1",
+                "apu_freq_basic",
+            ]
+
+        self.controllers = controllers
+        self.num_controllers = len(controllers)
+        self.device_buf_size = calc_buf_size(self.num_controllers)
+
         self.connected = False
         self.latch_queue = collections.deque()
         # the queue is composed of arrays with many latches in each. keep track
@@ -167,9 +180,9 @@ class LatchStreamer:
         if not isinstance(latches, np.ndarray):
             raise TypeError("'latches' must be ndarray, not {!r}".format(
                 type(latches)))
-        if len(latches.shape) != 2 or latches.shape[1] != 5:
-            raise TypeError("'latches' must be shape (n, 5), not {!r}".format(
-                latches.shape))
+        if len(latches.shape) != 2 or latches.shape[1] != self.num_controllers:
+            raise TypeError("'latches' must be shape (n, {}), not {!r}".format(
+                self.num_controllers, latches.shape))
         if latches.dtype != np.uint16:
             raise TypeError("'latches' must be uint16, not {!r}".format(
                 latches.dtype))
@@ -198,10 +211,10 @@ class LatchStreamer:
             raise ValueError("already connected")
 
         if num_priming_latches is None:
-            num_priming_latches = LATCH_BUF_SIZE
+            num_priming_latches = self.device_buf_size
 
         # we can't pre-fill the buffer with more latches than fit in it
-        num_priming_latches = min(num_priming_latches, LATCH_BUF_SIZE)
+        num_priming_latches = min(num_priming_latches, self.device_buf_size)
 
         if self.latch_queue_len < num_priming_latches:
             raise ValueError("{} priming latches requested but only {} "
@@ -231,10 +244,10 @@ class LatchStreamer:
         # get the priming latch data and convert it back to words. kinda
         # inefficient but we only do it once.
         priming_latches = struct.unpack(
-            "<{}H".format(num_priming_latches*5),
+            "<{}H".format(num_priming_latches*self.num_controllers),
             self._get_latch_data(num_priming_latches, num_priming_latches))
 
-        firmware = make_firmware(priming_latches,
+        firmware = make_firmware(self.controllers, priming_latches,
             apu_freq_basic=apu_freq_basic,
             apu_freq_advanced=apu_freq_advanced)
 
@@ -398,7 +411,7 @@ class LatchStreamer:
                     packet = self.resend_buf.pop() # pop latest transmission
                     # turn it from bytes back into a numpy array
                     packet = np.frombuffer(packet,
-                        dtype=np.uint16).reshape(-1, 5)
+                        dtype=np.uint16).reshape(-1, self.num_controllers)
                     to_resend.append(packet)
                     num_to_resend -= len(packet)
                 # put what we pulled out back into the send queue. to_resend is
@@ -430,7 +443,7 @@ class LatchStreamer:
                 # send so many that we overflow the buffer.
                 latch_data = self._get_latch_data(
                     min(20, actual_buffer_space), min(200, actual_buffer_space))
-                num_sent = len(latch_data)//10
+                num_sent = len(latch_data)//(self.num_controllers*2)
                 actual_sent += num_sent
 
                 if num_sent == 0: break # queue was empty
@@ -462,17 +475,18 @@ class LatchStreamer:
                 # maximum number that we can fail to send and need to resend.
                 while True:
                     # how many latches would be left if we removed the oldest?
-                    oldest_len = len(self.resend_buf[0])//10
+                    oldest_len = len(self.resend_buf[0])
+                    oldest_len //= (self.num_controllers*2)
                     remaining = self.resend_buf_len - oldest_len
                     # is that more than we could possibly need to resend?
-                    if remaining <= LATCH_BUF_SIZE:
+                    if remaining <= self.device_buf_size:
                         break # nope, don't do anything
                     # yup, so remove it
                     self.resend_buf.popleft()
                     self.resend_buf_len -= oldest_len
 
-            status_cb(StatusMessage(LATCH_BUF_SIZE-p_buffer_space,
-                LATCH_BUF_SIZE, p_stream_pos, self.stream_pos,
+            status_cb(StatusMessage(self.device_buf_size-p_buffer_space,
+                self.device_buf_size, p_stream_pos, self.stream_pos,
                 actual_sent, in_transit))
 
         # send out the data we prepared earlier

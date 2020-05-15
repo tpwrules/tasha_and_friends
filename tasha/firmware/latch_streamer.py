@@ -109,6 +109,16 @@ class ErrorCode(IntEnum):
     BUFFER_UNDERRUN = 0x40
     MISSED_LATCH = 0x41
 
+# register number of each controller name
+controller_name_to_addr = {
+    "p1d0": p_map.snes.w_p1d0,
+    "p1d1": p_map.snes.w_p1d1,
+    "p2d0": p_map.snes.w_p2d0,
+    "p2d1": p_map.snes.w_p2d1,
+    "apu_freq_basic": p_map.snes.w_apu_freq_basic,
+    "apu_freq_advanced": p_map.snes.w_apu_freq_advanced,
+}
+
 # MEMORY MAP
 # We have a 32K word RAM into which we have to fit all the code, buffers, and
 # register windows. We need as large a buffer as possible. We don't bother with
@@ -121,11 +131,16 @@ class ErrorCode(IntEnum):
 # 0x01C0-01FF | 64    | Register windows (8x)
 # 0x0200-7FFF | 32256 | Latch buffer
 
-# we want the latch buffer to be a multiple of 5 words so it can hold an integer
-# number of latches
 LATCH_BUF_START = 0x200
 LATCH_BUF_END = 0x8000
-LATCH_BUF_SIZE = (LATCH_BUF_END-LATCH_BUF_START)//5
+LATCH_BUF_WORDS = LATCH_BUF_END-LATCH_BUF_START
+
+# determine how many latches can fit in the above buffer given the number of
+# controllers (i.e. words per latch). note that, since this is a ring buffer,
+# it's full at buf_size-1 latches. but also there is 1 latch in the interface,
+# so this cancels out.
+def calc_buf_size(num_controllers):
+    return LATCH_BUF_WORDS // num_controllers
 
 FW_MAX_LENGTH = 0x1C0
 INITIAL_REGISTER_WINDOW = 0x1F8
@@ -144,6 +159,43 @@ class Vars(IntEnum):
 
     stream_pos = 2
     last_error = 3
+
+# return instructions that calculate the address of the latch from the buffer
+# index (multiply by number of controllers and add base)
+def i_calc_latch_addr(dest, src, num_controllers):
+    if num_controllers == 1:
+        return ADDI(dest, src, LATCH_BUF_START)
+    elif num_controllers == 2:
+        return [
+            ADDI(dest, src, LATCH_BUF_START),
+            ADD(dest, dest, src),
+        ]
+    elif num_controllers == 3:
+        return [
+            ADDI(dest, src, LATCH_BUF_START),
+            ADD(dest, dest, src),
+            ADD(dest, dest, src),
+        ]
+    elif num_controllers == 4:
+        return [
+            SLLI(dest, src, 2),
+            ADDI(dest, dest, LATCH_BUF_START),
+        ]
+    elif num_controllers == 5:
+        return [
+            SLLI(dest, src, 2),
+            ADD(dest, dest, src),
+            ADDI(dest, dest, LATCH_BUF_START),
+        ]
+    elif num_controllers == 6:
+        return [
+            SLLI(dest, src, 2),
+            ADD(dest, dest, src),
+            ADD(dest, dest, src),
+            ADDI(dest, dest, LATCH_BUF_START),
+        ]
+    else:
+        raise ValueError("'{}' controllers is not 1-6".format(num_controllers))
 
 # queue an error packet for transmission and return to main loop
 # on entry (in caller window)
@@ -187,7 +239,8 @@ def f_handle_error():
 # put a new latch into the SNES interface if necessary
 # on entry (in caller window)
 # R7: return address
-def f_update_interface():
+def f_update_interface(controller_addrs, buf_size):
+    num_controllers = len(controller_addrs)
     lp = "_{}_".format(random.randrange(2**32))
     r = RegisterManager("R6:last_error R5:buf_head R4:buf_tail R3:buf_addr "
         "R2:status R1:latch_data R0:vars")
@@ -214,23 +267,15 @@ def f_update_interface():
         CMP(r.buf_head, r.buf_tail),
         BEQ(lp+"empty"), # the pointers are equal, so nope
         # ah, good. there is. convert the buffer tail index into the address
-        SLLI(r.buf_addr, r.buf_tail, 2),
-        ADD(r.buf_addr, r.buf_addr, r.buf_tail),
-        ADDI(r.buf_addr, r.buf_addr, LATCH_BUF_START),
-        # then transfer the data to the interface
-        LD(r.latch_data, r.buf_addr, 0),
-        STXA(r.latch_data, p_map.snes.w_p1d0),
-        LD(r.latch_data, r.buf_addr, 1),
-        STXA(r.latch_data, p_map.snes.w_p1d1),
-        LD(r.latch_data, r.buf_addr, 2),
-        STXA(r.latch_data, p_map.snes.w_p2d0),
-        LD(r.latch_data, r.buf_addr, 3),
-        STXA(r.latch_data, p_map.snes.w_p2d1),
-        # soon we will be transferring an APU frequency control word, but that
-        # doesn't exist yet. just repeat the last store to make sure the timing
-        # matches.
-        LD(r.latch_data, r.buf_addr, 3),
-        STXA(r.latch_data, p_map.snes.w_p2d1),
+        i_calc_latch_addr(r.buf_addr, r.buf_tail, num_controllers),
+    ]
+    # then transfer that data to the interface
+    for controller_i, controller_addr in enumerate(controller_addrs):
+        fw.append([
+            LD(r.latch_data, r.buf_addr, controller_i),
+            STXA(r.latch_data, controller_addr),
+        ])
+    fw.append([
         # did we miss a latch? if another latch happened while we were
         # transferring data (or before we started), the console would get junk.
         # this read also clears the did latch and missed latch flags.
@@ -239,7 +284,7 @@ def f_update_interface():
         BNZ(lp+"missed"), # ah crap, the flag is set.
         # otherwise, we've done our job. advance the buffer pointer.
         ADDI(r.buf_tail, r.buf_tail, 1),
-        CMPI(r.buf_tail, LATCH_BUF_SIZE),
+        CMPI(r.buf_tail, buf_size),
         BNE(lp+"advanced"),
         MOVI(r.buf_tail, 0),
     L(lp+"advanced"),
@@ -247,7 +292,7 @@ def f_update_interface():
     L(lp+"ret"),
         ADJW(8),
         JR(R7, 0), # R7 in caller's window
-    ]
+    ])
     r -= "buf_head"
     r += "R5:error_code"
     fw.append([
@@ -264,7 +309,7 @@ def f_update_interface():
     return fw
 
 # jumps right back to main loop
-def send_status_packet():
+def send_status_packet(buf_size):
     lp = "_{}_".format(random.randrange(2**32))
     r = RegisterManager(
         "R7:lr R6:comm_word R5:txlr R4:temp "
@@ -277,7 +322,7 @@ def send_status_packet():
         LD(r.buf_head, r.vars, Vars.buf_head),
         CMP(r.buf_tail, r.buf_head),
         BGTU(lp+"not_wrapped"),
-        ADDI(r.buf_tail, r.buf_tail, LATCH_BUF_SIZE),
+        ADDI(r.buf_tail, r.buf_tail, buf_size),
     L(lp+"not_wrapped"),
         SUB(r.space_remaining, r.buf_tail, r.buf_head),
         SUBI(r.space_remaining, r.space_remaining, 1), # one is always empty
@@ -344,7 +389,8 @@ def send_status_packet():
 # R2: param2
 # R1: param1
 # needs to be really fast. we have less than 30 instructions per word!
-def cmd_send_latches():
+def cmd_send_latches(controller_addrs, buf_size):
+    num_controllers = len(controller_addrs)
     lp = "_{}_".format(random.randrange(2**32))
     r = RegisterManager(
         "R7:lr R6:comm_word R5:error_code R4:stream_pos "
@@ -367,26 +413,19 @@ def cmd_send_latches():
     fw.append([
     L(lp+"right_pos"),
         # we assume we have space at the head. figure out its address
-        SLLI(r.buf_addr, r.buf_head, 2),
-        ADD(r.buf_addr, r.buf_addr, r.buf_head),
-        ADDI(r.buf_addr, r.buf_addr, LATCH_BUF_START),
+        i_calc_latch_addr(r.buf_addr, r.buf_head, num_controllers),
 
     L(lp+"loop"),
         # keep the interface full
         JAL(r.lr, "update_interface"),
-
-        # receive all the words in this latch
-        JAL(r.rxlr, "rx_comm_word"),
-        ST(r.comm_word, r.buf_addr, 0),
-        JAL(r.rxlr, "rx_comm_word"),
-        ST(r.comm_word, r.buf_addr, 1),
-        JAL(r.rxlr, "rx_comm_word"),
-        ST(r.comm_word, r.buf_addr, 2),
-        JAL(r.rxlr, "rx_comm_word"),
-        ST(r.comm_word, r.buf_addr, 3),
-        JAL(r.rxlr, "rx_comm_word"),
-        ST(r.comm_word, r.buf_addr, 4),
-
+    ])
+    # receive all the words in this latch
+    for controller_i in range(num_controllers):
+        fw.append([
+            JAL(r.rxlr, "rx_comm_word"),
+            ST(r.comm_word, r.buf_addr, controller_i),
+        ])
+    fw.append([
         # keep the interface full
         JAL(r.lr, "update_interface"),
 
@@ -395,7 +434,7 @@ def cmd_send_latches():
 
         # bump the head correspondingly
         ADDI(r.buf_head, r.buf_head, 1),
-        CMPI(r.buf_head, LATCH_BUF_SIZE),
+        CMPI(r.buf_head, buf_size),
         BNE(lp+"not_wrapped"),
         # we're at the end, reset back to the start
         MOVI(r.buf_head, 0),
@@ -406,7 +445,7 @@ def cmd_send_latches():
         J(lp+"loop_done"),
     L(lp+"not_wrapped"),
         # we're not at the end, advance the buffer appropriately
-        ADDI(r.buf_addr, r.buf_addr, 5),
+        ADDI(r.buf_addr, r.buf_addr, num_controllers),
         # do we have any latches remaining?
         SUBI(r.length, r.length, 1),
         BNZ(lp+"loop"), # yup, go take care of them
@@ -722,20 +761,36 @@ def main_loop_body():
 # only need one latch that we can put in the interface at the very start. just
 # sticking it in the buffer to begin with avoids special-casing that latch, and
 # the extra is nice to jumpstart the buffer.
-def make_firmware(priming_latches=[],
+def make_firmware(controllers, priming_latches,
         apu_freq_basic=None,
         apu_freq_advanced=None):
+
+    num_controllers = len(controllers)
+    buf_size = calc_buf_size(num_controllers)
+    # convert controllers from list of names to list of absolute register
+    # addresses because that's what the system writes to
+    controller_addrs = []
+    for controller in controllers:
+        try:
+            addr = controller_name_to_addr[controller]
+        except IndexError:
+            raise ValueError("unknown controller name '{}'".format(
+                controller)) from None
+        controller_addrs.append(addr)
 
     if apu_freq_basic is None and apu_freq_advanced is not None:
         raise ValueError("must set apu basic before advanced")
 
-    num_priming_latches = len(priming_latches)//5
-    if len(priming_latches) % 5 != 0:
-        raise ValueError("priming latches must have 5 words per latch")
+    num_priming_latches = len(priming_latches)//num_controllers
+    if len(priming_latches) % num_controllers != 0:
+        raise ValueError("priming latches must have {} words per latch".format(
+            num_controllers))
+    if num_priming_latches == 0:
+        raise ValueError("must have at least one priming latch")
 
-    if num_priming_latches > LATCH_BUF_SIZE:
+    if num_priming_latches > buf_size:
         raise ValueError("too many priming latches: got {}, max is {}".format(
-            num_priming_latches, LATCH_BUF_SIZE))
+            num_priming_latches, buf_size))
 
     fw = [
         # start from "reset" (i.e. download is finished)
@@ -774,16 +829,11 @@ def make_firmware(priming_latches=[],
     fw.append(STXA(R2, p_map.snes.w_force_latch))
 
     # load the initial buttons into the registers
-    fw.append([
-        MOVI(R2, priming_latches[0]),
-        STXA(R2, p_map.snes.w_p1d0),
-        MOVI(R2, priming_latches[1]),
-        STXA(R2, p_map.snes.w_p1d1),
-        MOVI(R2, priming_latches[2]),
-        STXA(R2, p_map.snes.w_p2d0),
-        MOVI(R2, priming_latches[3]),
-        STXA(R2, p_map.snes.w_p2d1),
-    ])
+    for controller_i, controller_addr in enumerate(controller_addrs):
+        fw.append([
+            MOVI(R2, priming_latches[controller_i]),
+            STXA(R2, controller_addr),
+        ])
 
     # now that the registers are loaded, we can turn latching back on. this
     # setup guarantees the console will transition directly from seeing no
@@ -797,10 +847,10 @@ def make_firmware(priming_latches=[],
     # initialization is done. let's get the party started!
     fw.append(J("main_loop"))
 
-    fw.append(send_status_packet())
+    fw.append(send_status_packet(buf_size))
     fw.append(main_loop_body())
     fw.append(rx_comm_word())
-    fw.append(cmd_send_latches())
+    fw.append(cmd_send_latches(controller_addrs, buf_size))
 
     # define all the variables
     defs = [0]*len(Vars)
@@ -819,7 +869,7 @@ def make_firmware(priming_latches=[],
     L("handle_error"),
         f_handle_error(),
     L("update_interface"),
-        f_update_interface(),
+        f_update_interface(controller_addrs, buf_size),
     ])
 
     # header reception is called once so we stick it far away
@@ -840,6 +890,6 @@ def make_firmware(priming_latches=[],
     assembled_fw.extend([0]*(LATCH_BUF_START-len(assembled_fw)))
     # then fill it with the priming latches (skipping the one we stuck in the
     # interface at the beginning)
-    assembled_fw.extend(priming_latches[5:])
+    assembled_fw.extend(priming_latches[num_controllers:])
 
     return assembled_fw
