@@ -471,8 +471,8 @@ class LatchStreamer:
                     self.resend_buf.popleft()
                     self.resend_buf_len -= oldest_len
 
-            status_cb(StatusMessage(LATCH_BUF_SIZE-p_buffer_space-1,
-                LATCH_BUF_SIZE-1, p_stream_pos, self.stream_pos,
+            status_cb(StatusMessage(LATCH_BUF_SIZE-p_buffer_space,
+                LATCH_BUF_SIZE, p_stream_pos, self.stream_pos,
                 actual_sent, in_transit))
 
         # send out the data we prepared earlier

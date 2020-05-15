@@ -11,19 +11,29 @@ class StatusPrinter:
 
         # we only keep the last five old statuses
         self.old_statuses = collections.deque(maxlen=5)
+        self.did_print_status = False
         self.last_time = 0
+
         self.latches_sent = 0
+
+        self.last_pos = 0 # since the last received status message
+        self.overall_pos = 0 # since starting
 
     def status_cb(self, msg):
         if isinstance(msg, ls.DeviceErrorMessage):
             # if the device raised an error, we print the statuses leading up to
             # it so some context is visible
-            print() # avoid overwriting any status line
+            if self.did_print_status: # avoid overwriting any status line
+                print()
+                self.did_print_status = False
             for old_status in self.old_statuses:
                 print(old_status)
             print(msg)
         elif not isinstance(msg, ls.StatusMessage):
             # regular old messages just get printed.
+            if self.did_print_status: # avoid overwriting any status line
+                print()
+                self.did_print_status = False
             print(msg)
         else:
             # we accumulate status message statistics to avoid printing so many
@@ -31,17 +41,28 @@ class StatusPrinter:
             now = time.monotonic()
             self.old_statuses.append(msg)
             self.latches_sent += msg.sent
+
+            # pos is mod 2**16
+            curr_pos = msg.device_pos + (self.last_pos & (~0xFFFF))
+            if curr_pos < self.last_pos: curr_pos += 0x10000
+            pos_advanced = curr_pos - self.last_pos
+            self.overall_pos += pos_advanced
+            self.last_pos = curr_pos
+
             if now-self.last_time < self.period:
                 return # it's not time yet
 
-            percent_full = int(100*msg.buffer_use/msg.buffer_size)
-            m = ("   Pos: {: >5d}"
-                "   Buf:{: >3d}%"
-                "   Sent:{: >5d} ({:3.1f}x)  ".format(
-                msg.device_pos, percent_full, self.latches_sent,
-                self.latches_sent/60.09/(now-self.last_time)))
+            latch_pos = self.overall_pos - msg.buffer_use
+            m = ("  Sent:{: >5d} ({: >5.1f}x)"
+                "   Buf:{: >5d} ({: >3d}%)"
+                "   Latched: {}".format(
+                self.latches_sent, self.latches_sent/60.09/(now-self.last_time),
+                msg.buffer_use, int(100*msg.buffer_use/msg.buffer_size),
+                latch_pos,
+                ))
             print(m, end="\r")
 
+            self.did_print_status = True
             self.latches_sent = 0
             self.last_time = now
 
