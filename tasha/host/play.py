@@ -7,7 +7,14 @@ from .latch_streamer import LatchStreamer
 from .ls_utils import StatusPrinter, stream_loop
 from ..gateware.apu_calc import calculate_advanced
 
-parser = argparse.ArgumentParser(description='Play back a TAS using TASHA.')
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    description='Play back a TAS using TASHA.\n\n'
+    'The intital settings of the APU clock generator can be configured using\n'
+    'the \'--apu_\'-prefixed options. If the TAS is configured to control the\n'
+    'clock generator, then the initial settings are in effect only until the\n'
+    'first latch. Please consult \'apu_clockgen.py\' for a more thorough\n'
+    'description of the clock generator settings and operation.')
 parser.add_argument('port', type=str,
     help='Name of the serial port TASHA is attached to.')
 parser.add_argument('file', type=argparse.FileType('rb'),
@@ -16,11 +23,50 @@ parser.add_argument('file', type=argparse.FileType('rb'),
 parser.add_argument('-b', '--blank', type=int, default=0,
     help='Prepend blank latches to or (if negative) remove latches from the '
     'start of the TAS.')
-parser.add_argument('--apu_freq', type=float, default=None,
-    help='Configure the initial APU frequency in MHz (before the TAS takes '
-    'control, if configured). If not set, defaults to 24.607104MHz.')
+parser.add_argument('-c', '--controllers', type=str, default='1,2,5,6',
+    help='Comma-separated list of controllers to use from the TAS. The first '
+    'entry is assigned to p1d0 (player 1 data line 0), the second p1d1, the '
+    'third p2d0, and the fourth p2d1. By default, all four lines are used and '
+    'are assigned controllers 1,2,5,6.')
+
+parser.add_argument('-f', '--apu_freq', type=float, default=24.607104,
+    help='Set initial frequency in MHz. If not set, defaults to 24.607104MHz.')
+parser.add_argument('--apu_jitter', type=int, default=0, choices=range(8),
+    metavar="N", help='Set initial jitter amount. This delays pulse skipping '
+    'by a random number of clock cycles between 0 and 2**N-1. By default '
+    'N = 0, and so jitter is disabled. High jitter amounts at low frequencies '
+    'may unexpectedly raise the output frequency.')
+parser.add_argument('--apu_alt_jitter', action="store_true",
+    help='Enable alternate jitter mode, where the LFSR is advanced every pulse '
+    'skip. By default, the LFSR is advanced every clock cycle.')
+parser.add_argument('--apu_alt_polarity', action="store_true",
+    help='Enable alternate skip polarity, where high pulses are skipped '
+    '(010 -> 000). By default, low pulses are skipped (101 -> 111).')
 
 args = parser.parse_args()
+
+all_controllers = ["p1d0", "p1d1", "p2d0", "p2d1"]
+# number of each controller in the file, corresponding to the names above
+file_nums = []
+for controller in args.controllers.split(","):
+    try:
+        file_num = int(controller)
+    except ValueError:
+        file_num = None
+    if file_num is None or (file_num < 1 or file_num > 8):
+        print("Invalid controller number '{}'. Must be 1-8.".format(controller))
+        exit(1)
+    file_nums.append(file_num)
+
+if len(file_nums) < 1 or len(file_nums) > 4:
+    print("Invalid number of controllers '{}'. Must be 1-4.".format(
+        len(file_nums)))
+    exit(1)
+
+# subtract 1 to get the column offset
+file_nums = tuple(n-1 for n in file_nums)
+# remove the controllers we're not using
+all_controllers = all_controllers[:len(file_nums)]
 
 latch_file = args.file
 def read_latches(num_latches):
@@ -30,21 +76,17 @@ def read_latches(num_latches):
     if len(data) == 0:
         return None # the file is over
     data = np.frombuffer(data, dtype='>u2').reshape(-1, 8)
-    # take out the controllers that matter and convert to regular endian uint16
-    return data[:, (0, 1, 4, 5)].astype(np.uint16)
+    # take out the controllers we're using and convert to regular endian uint16
+    return data[:, file_nums].astype(np.uint16)
 
-# default set of controllers and order. will soon be user-configurable.
-latch_streamer = LatchStreamer(controllers=["p1d0", "p1d1", "p2d0", "p2d1"])
+latch_streamer = LatchStreamer(controllers=all_controllers)
 
-apu_freq_basic = None
-apu_freq_advanced = None
-if args.apu_freq is not None:
-    apu_freq_basic, apu_freq_advanced, actual = \
-        calculate_advanced(args.apu_freq)
+apu_freq_basic, apu_freq_advanced, actual = calculate_advanced(
+    args.apu_freq, args.apu_jitter, args.apu_alt_jitter, args.apu_alt_polarity)
 
-    if abs(args.apu_freq-actual) > 10e-6:
-        print("WARNING: desired APU frequency is {:.6f} but actual will be "
-            "{:.6f} (more than 10Hz different)".format(args.apu_freq, actual))
+if abs(args.apu_freq-actual) > 10e-6:
+    print("WARNING: desired APU frequency is {:.6f} but actual will be "
+        "{:.6f} (more than 10Hz different)".format(args.apu_freq, actual))
 
 if args.blank > 0:
     latch_streamer.add_latches(np.zeros((args.blank, 5), dtype=np.uint16))
