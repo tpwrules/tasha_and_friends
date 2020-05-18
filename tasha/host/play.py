@@ -89,7 +89,8 @@ if abs(args.apu_freq-actual) > 10e-6:
         "{:.6f} (more than 10Hz different)".format(args.apu_freq, actual))
 
 if args.blank > 0:
-    latch_streamer.add_latches(np.zeros((args.blank, 5), dtype=np.uint16))
+    latch_streamer.add_latches(
+        np.zeros((args.blank, len(file_nums)), dtype=np.uint16))
 elif args.blank < 0:
     to_read = -args.blank
     while to_read > 0:
