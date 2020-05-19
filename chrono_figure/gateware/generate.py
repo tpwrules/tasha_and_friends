@@ -17,7 +17,16 @@ class Top(Elaboratable):
         self.i_snes_pard = Signal()
         self.i_snes_pawr = Signal()
         self.i_snes_clock = Signal()
-        self.i_snes_reset = Signal()
+        self.i_snes_reset = Signal() # pulses high right after reset ends
+
+        self.i_config = Signal(32) # configuration word
+        self.i_config_addr = Signal(8) # which matcher to apply it to
+        self.i_config_we = Signal() # write word to the address
+
+        # connection to the event FIFO
+        self.o_event = Signal(31)
+        self.o_event_valid = Signal()
+        self.i_event_re = Signal() # acknowledge the data
 
         # version constant output for the get version command
         self.o_gateware_version = Signal(32)
