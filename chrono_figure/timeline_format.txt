@@ -2,18 +2,26 @@ The Timeline is how we collect and analyze all the information gathered from
 various APU adjustment shenanigans. It's a JSON file whose contents are
 described below.
 
+A "clock cycle" refers to one cycle of the SNES's 21.477272MHz master
+oscillator. The actual frequency (at least when the timeline was created) is the
+"cpu_frequency" property of the EMU INFO object. The clock cycle counter starts
+at 0 when RESET occurrs and counts up by 1 every clock cycle. It does not wrap.
+
 THE ROOT OBJECT
 The ROOT object is the root object in the file.
 It contains the following properties:
   * emu_info: the singleton EMU INFO object
   * runs: an array of RUN objects
-  * nmis: an array of NMI objects. note that NMI 0 is actually RESET
+  * nmis: an array of NMI objects. note that "NMI" 0 starts at RESET and ends at
+        the first actual NMI
+  * latches: an array of the clock cycles each latch occurred at. this is the
+        clock cycle the latch line rises. note that latch 0 is the first such
+        occurrence, the controller data before then is not defined.
 
 THE EMU INFO OBJECT
 The EMU INFO object contains information on the emulator setup used to create
 the timeline. A timeline must always be based on a known-good emulator
-measurement, so we only bother keeping track of that one emulator which amde the
-initial measurement.
+measurement, so we only bother keeping track of that one emulator which made it.
 It contains the following properties:
   * cpu_frequency: Emulated CPU frequency in Hz
   * apu_frequency: Emulated APU frequency in Hz
@@ -23,9 +31,7 @@ The RUN object contains information on a sequence of console measurements that
 started from RESET.
 It contains the following properties:
   * name: the name of the run. can contain any characters.
-  * short_name: the short name of the run, used internally. can only contain
-        letters, numbers, and underscores, and can't start with a number.
-  * apu_clock_source: an APU CLOCK SOURCE object, or not present if not known
+  * apu_clock_source: an APU CLOCK SOURCE object
 
 THE APU CLOCK SOURCE OBJECT
 The APU CLOCK SOURCE object contains information on how the APU clock signal was generated.
@@ -46,14 +52,13 @@ Each source also has the following additional properties
       * jitter: jitter amount from 0 through 7
       * jitter_mode: boolean for alternate jitter mode
       * polarity: boolean for alternate polarity
+      * applied: what clock cycle the clock generator was updated with these
+            properties. must be 0 for "before/at powerup" or the clock cycle of
+            a latch otherwise.
 
 THE NMI OBJECT
-The NMI object contains information on one NMI in the timeline. "Clock cycles"
-are counted at 21.477272MHz based on the SNES's master oscillator. The counter
-is 0 at RESET and counts up from there.
+The NMI object contains information on one NMI in the timeline.
 It contains the following properties:
-  * start_latch_num: how many latches have occurred since RESET as of the start
-        of this NMI
   * wait_cycle: the clock cycle that this NMI entered a wait loop for the next
         NMI. if the same as end_cycle, then this never happened.
   * end_cycle: the clock cycle that this NMI ended (actually the clock cycle of
@@ -70,7 +75,8 @@ THE MEASUREMENT OBJECT
 The MEASUREMENT object contains information about one measurement made of one
 NMI in one run.
 It contains the following properties:
-  * short_name: the short name of the run this measurement was taken during
+  * rid: run ID (index into the runs array) of the run this measurement was
+        taken during
   * wait_cycle: the clock cycle that this NMI was measured to have entered a
         wait loop for the next NMI. if the same as end_cycle, then this never
         happened.
@@ -78,4 +84,5 @@ It contains the following properties:
         (actually the clock cycle of the start of the next NMI)
   * apu_clock_source: an APU CLOCK SOURCE object describing the clock that was
         active during this measurement, or not present if the same as the last
-        NMI in this run.
+        NMI in this run (same as the clock source in the RUN object if this is
+        the first NMI)

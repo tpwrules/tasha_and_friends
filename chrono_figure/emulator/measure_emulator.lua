@@ -2,10 +2,6 @@ script_filename = @@LUA_SCRIPT_FILENAME@@
 script_dir = script_filename:match("^(.*[/\\])")
 
 out_f = nil
--- how far along are we?
-curr_nmi_num = 0
-start_latch_num = 0 -- latch count at the start of the NMI
-curr_latch_num = 0
 
 -- are we waiting? where did we start?
 currently_waiting = false
@@ -26,7 +22,14 @@ apu_regs = {0x2140, 0x2141, 0x2142, 0x2143}
 -- we need to know when latches happened relative to NMI so we can insert
 -- frequency adjustments at the appropriate points
 function latch_handler()
-    curr_latch_num = curr_latch_num + 1
+    local out_str = string.format("l,%d,%d,%d\n",
+        movie.currentframe(),
+        memory.getregister("vcounter"),
+        memory.getregister("hcounter")
+    )
+    if out_f ~= nil then
+        out_f:write(out_str)
+    end
 end
 callback.register("latch", latch_handler)
 
@@ -80,9 +83,7 @@ function nmi_fired(addr, value)
         wait_vcounter = nmi_vcounter
     end
 
-    local out_str = string.format(string.rep("%d,", 11).."%d\n",
-        curr_nmi_num,
-        start_latch_num,
+    local out_str = string.format('n,'..string.rep("%d,", 9).."%d\n",
         wait_frame,
         wait_vcounter,
         wait_hcounter,
@@ -101,8 +102,6 @@ function nmi_fired(addr, value)
     apu_writes = 0
     joy_reads = 0
     joy_writes = 0
-    curr_nmi_num = curr_nmi_num + 1
-    start_latch_num = curr_latch_num
 end
 
 function measure(addr_fname, out_fname)
@@ -168,9 +167,7 @@ function measure(addr_fname, out_fname)
     memory.registerexec("BUS", nmi_addr, nmi_fired)
 
     out_f = io.open(script_dir .. "/" .. out_fname, "w")
-    out_f:write("hello\n")
-    out_f:write(string.format("cpu:%d,smp:%d\n",
+    out_f:write("hello from measure_emulator.lua v1\n")
+    out_f:write(string.format("c,%d,%d\n",
         bsnes.get_cpu_frequency(), bsnes.get_smp_frequency()))
-    out_f:write("nmi_num,start_latch_num,wait_f,wait_v,wait_h,nmi_f,nmi_v,")
-    out_f:write("nmi_h,apu_r,apu_w,joy_r,joy_w\n")
 end

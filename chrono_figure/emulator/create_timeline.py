@@ -11,45 +11,47 @@ def pixel_to_cycle(f, v, h):
 out = {}
 
 f = open(sys.argv[1], "r")
-if f.readline() != "hello\n":
+if f.readline() != "hello from measure_emulator.lua v1\n":
     raise Exception("invalid greeting")
 
 # get emulated frequencies
 freqs = f.readline().split(",")
-if not freqs[0].startswith("cpu:") or not freqs[1].startswith("smp"):
+if freqs[0] != "c":
     raise Exception("invalid frequency format")
 
-cpu_freq, smp_freq = int(freqs[0][4:]), int(freqs[1][4:])
 emu_info = {}
-emu_info["cpu_frequency"], emu_info["apu_frequency"] = \
-    int(freqs[0][4:]), int(freqs[1][4:])
+emu_info["cpu_frequency"] = int(freqs[1])
+emu_info["smp_frequency"] = int(freqs[2])
 out["emu_info"] = emu_info
 
 out["runs"] = {} # populated based on measurements from console
 
-header = f.readline()
-correct = ("nmi_num,start_latch_num,wait_f,wait_v,wait_h,nmi_f,nmi_v,nmi_h,"
-    "apu_r,apu_w,joy_r,joy_w\n")
-if header != correct:
-    raise Exception("invalid header")
-
 nmis = []
+latches = []
 
 for line in f:
-    bits = tuple(int(b) for b in line.split(","))
-    nmi = {}
-    nmi["start_latch_num"] = bits[1]
-    nmi["wait_cycle"] = pixel_to_cycle(*bits[2:5])
-    nmi["end_cycle"] = pixel_to_cycle(*bits[5:8])
-    nmi["apu_reads"] = bits[8]
-    nmi["apu_writes"] = bits[9]
-    nmi["joy_reads"] = bits[10]
-    nmi["joy_writes"] = bits[11]
-    nmi["measurements"] = {}
+    bits = tuple(int(b) for b in line.split(",")[1:])
+    if line[:2] == "l,":
+        latch_cycle = pixel_to_cycle(*bits)
+        latches.append(latch_cycle)
+    elif line[:2] == "n,":
+        nmi = {}
+        nmi["wait_cycle"] = pixel_to_cycle(*bits[0:3])
+        nmi["end_cycle"] = pixel_to_cycle(*bits[3:6])
+        nmi["apu_reads"] = bits[6]
+        nmi["apu_writes"] = bits[7]
+        nmi["joy_reads"] = bits[8]
+        nmi["joy_writes"] = bits[9]
+        nmi["measurements"] = {}
 
-    nmis.append(nmi)
+        nmis.append(nmi)
+    else:
+        raise Exception("invalid record type on line "+line)
+
+
 
 out["nmis"] = nmis
+out["latches"] = latches
 
 f.close()
 f = open(sys.argv[2], "w")
