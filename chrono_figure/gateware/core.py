@@ -7,15 +7,16 @@ import types
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 3
+GATEWARE_VERSION = 4
 
 # all the types of matches
 MATCH_TYPE_NONE = 0
-MATCH_TYPE_NMI = 1
-MATCH_TYPE_WAIT_START = 2
-MATCH_TYPE_WAIT_END = 3
+MATCH_TYPE_RESET = 1
+MATCH_TYPE_NMI = 2
+MATCH_TYPE_WAIT_START = 3
+MATCH_TYPE_WAIT_END = 4
 
-MATCH_TYPE_BITS = 2 # number of bits required to represent the above (max 8)
+MATCH_TYPE_BITS = 3 # number of bits required to represent the above (max 8)
 
 NUM_MATCHERS = 64 # how many match engines are there?
 MATCHER_BITS = 6 # number of bits required to represent the above (max 8)
@@ -60,7 +61,8 @@ class ChronoFigureCore(Elaboratable):
         self.i_snes_pard = Signal()
         self.i_snes_pawr = Signal()
         self.i_snes_clock = Signal()
-        self.i_snes_reset = Signal() # pulses high right after reset ends
+        # pulses high right after reset ends. not accurate.
+        self.i_snes_reset = Signal()
 
         self.i_config = Signal(32) # configuration word
         self.i_config_addr = Signal(8) # which matcher to apply it to
@@ -99,9 +101,7 @@ class ChronoFigureCore(Elaboratable):
         snes_cycle_counter = Signal(29)
         last_clock = Signal()
         m.d.sync += last_clock.eq(b.clock)
-        with m.If(b.reset):
-            m.d.sync += snes_cycle_counter.eq(0)
-        with m.Elif(~last_clock & b.clock):
+        with m.If(~last_clock & b.clock):
             m.d.sync += snes_cycle_counter.eq(snes_cycle_counter + 1)
 
         # for now we are just concerned with tracing execution. there's no
@@ -159,7 +159,7 @@ class ChronoFigureCore(Elaboratable):
 
         # the final output. will be none if no matchers matched, or the type of
         # that match otherwise.
-        matched_type = Mux(b.reset, MATCH_TYPE_NONE, to_or[0])
+        matched_type = to_or[0]
 
         # keep track of when the SNES started waiting for NMI
         wait_cycle = Signal(29)
@@ -167,8 +167,6 @@ class ChronoFigureCore(Elaboratable):
         # keep track of which NMI this is. this is just used for ensuring no
         # data is lost.
         nmi_counter = Signal(2)
-        with m.If(b.reset):
-            nmi_counter.eq(0)
 
         # data for an event (the NMI). this data is stored in the event FIFO for
         # the rest of the system
@@ -177,6 +175,13 @@ class ChronoFigureCore(Elaboratable):
         event_data1 = Signal(30)
 
         with m.Switch(matched_type):
+            with m.Case(MATCH_TYPE_RESET):
+                m.d.sync += [
+                    snes_cycle_counter.eq(0),
+                    currently_waiting.eq(0),
+                    # first NMI after reset is 0, then 1, 2, 3, 1, 2, 3, etc.
+                    nmi_counter.eq(0),
+                ]
             with m.Case(MATCH_TYPE_NMI):
                 m.d.comb += event_occurred.eq(1)
                 m.d.sync += [
@@ -196,7 +201,9 @@ class ChronoFigureCore(Elaboratable):
                 ]
 
                 m.d.sync += [
-                    nmi_counter.eq(nmi_counter+1),
+                    # don't roll back to 0 so that we can know that 0 is always
+                    # the first NMI after reset
+                    nmi_counter.eq(Mux(nmi_counter == 3, 1, nmi_counter+1)),
                     currently_waiting.eq(0),
                 ]
             with m.Case(MATCH_TYPE_WAIT_START):
