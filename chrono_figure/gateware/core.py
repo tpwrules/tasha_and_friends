@@ -7,7 +7,7 @@ import types
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 2
+GATEWARE_VERSION = 3
 
 # all the types of matches
 MATCH_TYPE_NONE = 0
@@ -188,7 +188,7 @@ class ChronoFigureCore(Elaboratable):
                     )),
                     # second data is the cycle the SNES started waiting for NMI
                     # and the high bit of the NMI counter
-                    event_data0.eq(Cat(
+                    event_data1.eq(Cat(
                         # or the current cycle if it never waited
                         Mux(currently_waiting, wait_cycle, snes_cycle_counter),
                         nmi_counter[1],
