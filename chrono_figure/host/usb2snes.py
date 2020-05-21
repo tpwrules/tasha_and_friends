@@ -123,13 +123,6 @@ class USB2SNES:
 
     # read various pieces of information about what's going on
     def get_info(self):
-        # "fw_version", # CONFIG_FWVER: firmware version as a 32 bit number
-        # "fw_version_string", # firmware version string displayed in the menu
-        # "device_name", # DEVICE_NAME: "sd2snes Mk.II" or "sd2snes Mk.III"
-        # "feature_byte", # low byte of active FPGA feature bits. consult usb2snes's
-        #                 # src/fpga_spi.c for definitions
-        # "current_rom", # file name of the currently executing ROM
-
         # ask for the information
         self._send_command(OP_INFO, SPACE_SNES, resp=True)
         # it comes back in its own packet
