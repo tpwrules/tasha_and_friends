@@ -111,7 +111,7 @@ class USB2SNES:
     def reset_to_menu(self):
         self._send_command(OP_MENU_RESET, SPACE_SNES)
 
-    # boot the SNES ROM with the given file name
+    # boot the SNES ROM off the SD card with the given file name
     def boot_rom(self, filename):
         filename = filename.encode("ascii")
         if b"." not in filename:
