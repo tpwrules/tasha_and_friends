@@ -24,7 +24,7 @@ emu_info["cpu_frequency"] = int(freqs[1])
 emu_info["smp_frequency"] = int(freqs[2])
 out["emu_info"] = emu_info
 
-out["runs"] = {} # populated based on measurements from console
+out["runs"] = [] # populated based on measurements from console
 
 nmis = []
 latches = []
@@ -42,7 +42,7 @@ for line in f:
         nmi["apu_writes"] = bits[7]
         nmi["joy_reads"] = bits[8]
         nmi["joy_writes"] = bits[9]
-        nmi["measurements"] = {}
+        nmi["measurements"] = []
 
         nmis.append(nmi)
     else:
