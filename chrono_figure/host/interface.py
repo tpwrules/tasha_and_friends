@@ -6,7 +6,7 @@ from . import usb2snes
 from ..gateware import core as gateware
 
 # usb2snes expected firmware version
-FIRMWARE_VERSION = 0xC10A0306
+FIRMWARE_VERSION = 0xC10A0307
 
 # chrono figure address space addresses. matches usb2snes's src/chrono_figure.c
 ADDR_GATEWARE_VERSION = 0x00000000
@@ -126,8 +126,7 @@ class ChronoFigureInterface:
                 (valid_address + (valid_match_type<<24))))
 
         # make sure we have enough matchers for the configurations
-        # more than 16 breaks things for some reason
-        num_matchers = 16 # gateware.NUM_MATCHERS
+        num_matchers = gateware.NUM_MATCHERS
         if len(config_data) > num_matchers:
             raise CFInterfaceError("attempted to configure {} matchers, but "
                 "the gateware has only {}".format(
