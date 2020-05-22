@@ -31,7 +31,8 @@ def read_all_latches():
 all_latches = read_all_latches()
 
 # fill with default clock frequency
-default_basic, default_advanced, default_real = calculate_advanced(24.607104)
+default_basic, default_advanced, default_real = \
+    calculate_advanced(24.607104, jitter=4)
 freqs = [default_real]*len(all_latches)
 all_latches[:, 4] = default_basic
 all_latches[:, 5] = default_advanced
@@ -59,6 +60,31 @@ for nmi, latch in zip(t_nmis[:-1], nmi_start_latches[:-1]):
     p = nmi_start_latches.index(latch)
     if abs(t_ls[nmi_start_latches[p+1]]-nmi["end_cycle"]) > 1000:
         print(nmi, t_ls[nmi_start_latches[p+1]], nmi["end_cycle"])
+
+# group nmis together so that the last one also controls the others
+group_map = {} # from nmi to the last one
+grouped_nmis = []
+for ni, nmi in enumerate(t_nmis):
+    # if this nmi doesn't access the apu, we don't care
+    if nmi["apu_reads"] + nmi["apu_writes"] < 4:
+        grouped_nmis = []
+        continue
+    ex_nmi_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
+    ex_busy = (F_CYC-ex_nmi_cycle+ex_wait_cycle)/F_CYC*100
+    # is this nmi 100% busy?
+    if ex_busy > 99.99:
+        # it might be a group member
+        grouped_nmis.append(ni)
+    else: # it's the controller
+        if len(grouped_nmis) == 0: continue
+        # assign the first one's latch to the controller
+        nmi_start_latches[ni] = nmi_start_latches[grouped_nmis[0]]
+        # map them all to the controller
+        for gni in grouped_nmis:
+            group_map[gni] = ni
+        print("gj:", t_nmis[grouped_nmis[0]]["joy_reads"],
+            ",", nmi["joy_writes"], ni)
+        grouped_nmis = []
 
 print("chrono figure setup...")
 # connect to and set up chrono figure
@@ -111,6 +137,8 @@ def do_measure():
 
         try:
             events = cf.get_events()
+        except KeyboardInterrupt:
+            raise
         except:
             import traceback
             traceback.print_exc()
@@ -165,7 +193,7 @@ def do_measure():
                 do_print = True
 
             if a_problem:
-                problem_nmis.append(nmi_num)
+                problem_nmis.append(group_map.get(nmi_num, nmi_num))
 
             if do_print:
                 print("nmi:{} busy:{:.2f}% ex_busy:{:.2f}% "
@@ -255,9 +283,10 @@ while True:
         for m in nmi["measurements"]:
             deviations.append((m["wait_cycle"]-ex_nmi_cycle,
                 m["apu_clock_source"]["actual"]))
+        print(deviations)
         deviations = np.asarray(deviations)
 
-        if len(deviations) < 6:
+        if len(deviations) < 3:
             print("not enough data to predict, so guessing wildly")
             new_freq = freqs[nmi_start_latches[pi]]
             delta = random.random()/10
@@ -283,10 +312,11 @@ while True:
                 print("m={}, b={}, new_freq={}".format(m, b, new_freq))
 
         new_freq = min(max(new_freq, 23), 24.75)
-        basic, advanced, actual = calculate_advanced(new_freq)
+        basic, advanced, actual = calculate_advanced(new_freq, jitter=4)
         print("new APU freq: {:.6f}MHz".format(new_freq))
 
         for li in range(nmi_start_latches[pi], nmi_start_latches[pi+1]):
+            print("set", li, actual)
             freqs[li] = actual
             all_latches[li, 4] = basic
             all_latches[li, 5] = advanced
