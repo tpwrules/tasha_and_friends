@@ -154,6 +154,7 @@ class ChronoFigureInterface:
         # got all the old events out of it
         self.device.read_space(usb2snes.SPACE_CHRONO_FIGURE,
             ADDR_EVENT_FIFO, 512)
+        self.last_data = [] # junk all the unparsed event pieces too
         # the only event with number 0 is the first event after reset
         self.next_event_counter = 0
         # now that we know there's nothing there, let the console start back up
@@ -202,6 +203,6 @@ class ChronoFigureInterface:
             event_data = event_data[2:]
 
         # remember the leftovers for next time
-        self.event_data = event_data
+        self.last_data = event_data
 
         return got_events
