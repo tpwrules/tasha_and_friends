@@ -164,9 +164,9 @@ class ChronoFigureCore(Elaboratable):
         # keep track of when the SNES started waiting for NMI
         wait_cycle = Signal(29)
         currently_waiting = Signal()
-        # keep track of which NMI this is. this is just used for ensuring no
+        # keep track of which event this is. this is just used for ensuring no
         # data is lost.
-        nmi_counter = Signal(2)
+        event_counter = Signal(2)
 
         # data for an event (the NMI). this data is stored in the event FIFO for
         # the rest of the system
@@ -179,31 +179,31 @@ class ChronoFigureCore(Elaboratable):
                 m.d.sync += [
                     snes_cycle_counter.eq(0),
                     currently_waiting.eq(0),
-                    # first NMI after reset is 0, then 1, 2, 3, 1, 2, 3, etc.
-                    nmi_counter.eq(0),
+                    # first event after reset is 0, then 1, 2, 3, 1, 2, 3, etc.
+                    event_counter.eq(0),
                 ]
             with m.Case(MATCH_TYPE_NMI):
                 m.d.comb += event_occurred.eq(1)
                 m.d.sync += [
                     # first data is the cycle the NMI happened on and the low
-                    # bit of the NMI counter
+                    # bit of the event counter
                     event_data0.eq(Cat(
                         snes_cycle_counter,
-                        nmi_counter[0],
+                        event_counter[0],
                     )),
                     # second data is the cycle the SNES started waiting for NMI
-                    # and the high bit of the NMI counter
+                    # and the high bit of the event counter
                     event_data1.eq(Cat(
                         # or the current cycle if it never waited
                         Mux(currently_waiting, wait_cycle, snes_cycle_counter),
-                        nmi_counter[1],
+                        event_counter[1],
                     )),
                 ]
 
                 m.d.sync += [
                     # don't roll back to 0 so that we can know that 0 is always
-                    # the first NMI after reset
-                    nmi_counter.eq(Mux(nmi_counter == 3, 1, nmi_counter+1)),
+                    # the first event after reset
+                    event_counter.eq(Mux(event_counter==3, 1, event_counter+1)),
                     currently_waiting.eq(0),
                 ]
             with m.Case(MATCH_TYPE_WAIT_START):
