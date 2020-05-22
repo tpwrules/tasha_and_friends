@@ -36,13 +36,18 @@ class ChronoFigureInterface:
         if self.device is None:
             raise CFInterfaceError("not connected")
 
-    # connect to the usb2snes, test communication, and validate versions
-    def connect(self, port):
+    # connect to the usb2snes, test communication, and validate versions. if
+    # port is None, try to autodetect it. otherwise, use the given serial port.
+    def connect(self, port=None):
         if self.device is not None:
             self.device.disconnect()
             self.device = None
 
         device = usb2snes.USB2SNES()
+        if port is None:
+            port = usb2snes.detect_port()
+            if port is None: # couldn't be autodetected
+                raise CFInterfaceError("could not autodetect usb2snes")
         device.connect(port)
 
         # make sure the usb2snes is responsive. if it is, validate the returned

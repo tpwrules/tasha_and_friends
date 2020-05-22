@@ -4,6 +4,20 @@ import struct
 from collections import namedtuple
 
 import serial
+import serial.tools.list_ports
+
+# if there is exactly one USB2SNES device attached, return its port (suitable
+# for passing to connect()). otherwise, if there are no devices or more than
+# one, return None.
+def detect_port():
+    got_port = None
+    for port in serial.tools.list_ports.comports():
+        if (port.vid, port.pid) == (0x1209, 0x5A22):
+            if got_port is not None: # there are multiple ports
+                return None
+            got_port = port.device
+
+    return got_port
 
 OP_GET = 0
 OP_PUT = 1
