@@ -314,10 +314,16 @@ while True:
 
         print("curr APU freq: {:.6f}MHz".format(group.apu_freqs[-1]))
 
+        slow_down = busy < 50 # not busy enough!
+
         # calculate expected business if we had a desync as the business above
         # will be nonsense
         if len(measurement) != group.num_nmis:
             busy = (F_CYC-group.ex_end_cycle+group.ex_wait_cycle)/F_CYC*100
+            # if it ends sooner than we expect then we need to slow down. once
+            # we get it resynced, the other code will handle keeping it away
+            # from frame boundaries.
+            slow_down = measurement[-1][1] < group.ex_wait_cycle
         if busy < 50:
             target = group.ex_end_cycle - F_CYC*(1-(NMI_CLOSE_TARGET)/100)
         else:
@@ -327,7 +333,7 @@ while True:
             print("not enough data to predict, so guessing wildly")
             new_freq = group.apu_freqs[-1]
             delta = random.random()/10
-            if busy < 50: # need to slow down and be more busy
+            if slow_down:
                 new_freq -= delta
             else:
                 new_freq += delta
@@ -343,7 +349,7 @@ while True:
                 print("prediction failed, guessing wildly")
                 new_freq = group.apu_freqs[-1]
                 delta = random.random()/10
-                if busy < 50: # need to slow down and be more busy
+                if slow_down:
                     new_freq -= delta
                 else:
                     new_freq += delta
