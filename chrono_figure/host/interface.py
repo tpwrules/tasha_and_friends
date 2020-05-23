@@ -6,7 +6,7 @@ from . import usb2snes
 from ..gateware import core as gateware
 
 # usb2snes expected firmware version
-FIRMWARE_VERSION = 0xC10A0307
+FIRMWARE_VERSION = 0xC10A0301
 
 # chrono figure address space addresses. matches usb2snes's src/chrono_figure.c
 ADDR_GATEWARE_VERSION = 0x00000000
