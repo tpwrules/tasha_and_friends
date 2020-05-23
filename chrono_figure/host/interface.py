@@ -161,7 +161,7 @@ class ChronoFigureInterface:
         # and produce new events
         self.assert_reset(False)
 
-    # get new events and return them as an iterable of (nmi_cycle, wait_cycle)
+    # get new events and return them as an iterable of (end_cycle, wait_cycle)
     # pairs. the exact meaning is not covered here. it's recommended to wait at
     # least 100ms between calls because the usb2snes can get overwhelmed.
     def get_events(self):
@@ -196,10 +196,10 @@ class ChronoFigureInterface:
                 # 0 is reserved for the first event after reset
                 self.next_event_counter = 1
 
-            nmi_cycle = d0 & 0x1FFFFFFF
+            end_cycle = d0 & 0x1FFFFFFF
             wait_cycle = d1 & 0x1FFFFFFF
 
-            got_events.append((nmi_cycle, wait_cycle))
+            got_events.append((end_cycle, wait_cycle))
             event_data = event_data[2:]
 
         # remember the leftovers for next time

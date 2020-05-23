@@ -69,8 +69,8 @@ for ni, nmi in enumerate(t_nmis):
     if nmi["apu_reads"] + nmi["apu_writes"] < 4:
         grouped_nmis = []
         continue
-    ex_nmi_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
-    ex_busy = (F_CYC-ex_nmi_cycle+ex_wait_cycle)/F_CYC*100
+    ex_end_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
+    ex_busy = (F_CYC-ex_end_cycle+ex_wait_cycle)/F_CYC*100
     # is this nmi 100% busy?
     if ex_busy > 99.99:
         # it might be a group member
@@ -128,7 +128,7 @@ def do_measure():
     cf.start_measurement()
     print('measurement setup done')
     nmi_num = 0
-    last_nmi_cycle = 0
+    last_end_cycle = 0
     wrap_cycles = 0
     measurements = []
     problem_nmis = []
@@ -145,28 +145,28 @@ def do_measure():
             break
         desync = False
         for event, nmi in zip(events, t_nmis[nmi_num:nmi_num+len(events)]):
-            nmi_cycle, wait_cycle = event
-            if nmi_cycle < last_nmi_cycle:
+            end_cycle, wait_cycle = event
+            if end_cycle < last_end_cycle:
                 wrap_cycles += 2**29
-            last_nmi_cycle = nmi_cycle
-            nmi_cycle += wrap_cycles
+            last_end_cycle = end_cycle
+            end_cycle += wrap_cycles
             wait_cycle += wrap_cycles
-            if nmi_cycle < wait_cycle:
+            if end_cycle < wait_cycle:
                 wait_cycle -= 2**29
 
             # expected from the emulator
-            ex_nmi_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
+            ex_end_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
             apu_tot = nmi["apu_reads"] + nmi["apu_writes"]
 
-            busy = (F_CYC-nmi_cycle+wait_cycle)/F_CYC*100
-            ex_busy = (F_CYC-ex_nmi_cycle+ex_wait_cycle)/F_CYC*100
+            busy = (F_CYC-end_cycle+wait_cycle)/F_CYC*100
+            ex_busy = (F_CYC-ex_end_cycle+ex_wait_cycle)/F_CYC*100
 
-            measurements.append((nmi_cycle, wait_cycle))
+            measurements.append((end_cycle, wait_cycle))
 
             do_print = False
             a_problem = False
             desync = False
-            if abs(ex_nmi_cycle-nmi_cycle) > 1000:
+            if abs(ex_end_cycle-end_cycle) > 1000:
                 print("big nmi diff:", end=" ")
                 do_print = True
                 a_problem = True
@@ -197,8 +197,8 @@ def do_measure():
 
             if do_print:
                 print("nmi:{} busy:{:.2f}% ex_busy:{:.2f}% "
-                    "nmi_cycle:{} ex_nmi_cycle:{} apu_tot:{}".format(
-                    nmi_num, busy, ex_busy, nmi_cycle, ex_nmi_cycle, apu_tot))
+                    "end_cycle:{} ex_end_cycle:{} apu_tot:{}".format(
+                    nmi_num, busy, ex_busy, end_cycle, ex_end_cycle, apu_tot))
 
             if desync:
                 print("desynchrolized!!")
@@ -252,16 +252,16 @@ while True:
         print("------------")
         nmi = t_nmis[pi]
 
-        nmi_cycle, wait_cycle = measurements[pi]
+        end_cycle, wait_cycle = measurements[pi]
 
         # expected from the emulator
-        ex_nmi_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
+        ex_end_cycle, ex_wait_cycle = nmi["end_cycle"], nmi["wait_cycle"]
         apu_tot = nmi["apu_reads"] + nmi["apu_writes"]
 
-        busy = (F_CYC-nmi_cycle+wait_cycle)/F_CYC*100
-        ex_busy = (F_CYC-ex_nmi_cycle+ex_wait_cycle)/F_CYC*100
+        busy = (F_CYC-end_cycle+wait_cycle)/F_CYC*100
+        ex_busy = (F_CYC-ex_end_cycle+ex_wait_cycle)/F_CYC*100
 
-        if abs(ex_nmi_cycle-nmi_cycle) > 1000:
+        if abs(ex_end_cycle-end_cycle) > 1000:
             print("problem: desync")
             if apu_tot < 4:
                 print("but this NMI does not access the APU. can't help ya "
@@ -274,14 +274,14 @@ while True:
         print("curr APU freq: {:.6f}MHz".format(freqs[nmi_start_latches[pi]]))
 
         if busy < 50: # bump to 20%
-            target = ex_nmi_cycle - F_CYC*.8
+            target = ex_end_cycle - F_CYC*.8
         else: # bump to 80%
-            target = ex_nmi_cycle - F_CYC*.2
+            target = ex_end_cycle - F_CYC*.2
 
         # figure out APU frequency vs. cycle deviation (from end of nmi)
         deviations = []
         for m in nmi["measurements"]:
-            deviations.append((m["wait_cycle"]-ex_nmi_cycle,
+            deviations.append((m["wait_cycle"]-ex_end_cycle,
                 m["apu_clock_source"]["actual"]))
         print(deviations)
         deviations = np.asarray(deviations)
@@ -308,7 +308,7 @@ while True:
             else:
                 print("predicting based on linear fit with "
                     "R^2={:.3f}".format(r**2))
-                new_freq = m*(target-ex_nmi_cycle) + b
+                new_freq = m*(target-ex_end_cycle) + b
                 print("m={}, b={}, new_freq={}".format(m, b, new_freq))
 
         new_freq = min(max(new_freq, 23), 24.75)
