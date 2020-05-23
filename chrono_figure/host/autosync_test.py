@@ -227,7 +227,13 @@ def do_measure():
         # if this group doesn't have the same number of NMIs, we must have
         # desynced somehow
         if len(group_events) != group.num_nmis:
-            print("whoops, desync on group {}".format(gi))
+            missed = (group_events[-1][1]-group.ex_wait_cycle)/F_CYC*100
+            print("whoops, group {} desynced (missed expected time by "
+                "{:.2f}%).".format(gi, missed), end=" ")
+            if group_events[-1][1] >= group.ex_wait_cycle:
+                print("faster!")
+            else:
+                print("slower!")
             problem_groups.append(gi)
             desynced = True
             break
@@ -237,13 +243,16 @@ def do_measure():
         busy = (F_CYC-end_cycle+wait_cycle)/F_CYC*100
         closeness = 50-abs(busy-50)
         if closeness < NMI_CLOSE and group.apu_accesses >= MIN_APU_ACCESSES:
-            print("group {} got close to boundary (within {:.2f}%) and "
-                "accessed the APU {} times".format(
-                    gi, closeness, group.apu_accesses))
+            print("group {} got within {:.2f}% of boundary & accessed APU "
+                "{} times.".format(gi, closeness, group.apu_accesses), end=" ")
+            if busy > 50:
+                print("faster!")
+            else:
+                print("slower!")
             problem_groups.append(gi)
 
-    if not desynced: # we finished naturally rather than desyncing
-        print("finishing tas...")
+    if not desynced: # we finished naturally, make sure the rest works
+        print("made it through! finishing TAS...")
         try:
             while ls.communicate(): time.sleep(0.1)
         except KeyboardInterrupt:
@@ -255,7 +264,9 @@ def do_measure():
 
     return measurements, problem_groups
 
+num_iters = -1
 while True:
+    num_iters += 1
     print("building TAS")
     for gi, group in enumerate(nmi_groups):
         # if there isn't a new frequency, use the last one
@@ -290,7 +301,9 @@ while True:
         closeness = 50-abs(busy-50)
 
         if len(measurement) != group.num_nmis:
-            print("problem: desync")
+            missed = (measurement[-1][1]-group.ex_wait_cycle)/F_CYC*100
+            print("problem: desync (missed expected time by {:.2f}%)".format(
+                missed))
             if group.apu_accesses < MIN_APU_ACCESSES:
                 print("but this group does not access the APU. can't help ya "
                     "there, bud")
@@ -305,27 +318,32 @@ while True:
         # will be nonsense
         if len(measurement) != group.num_nmis:
             busy = (F_CYC-group.ex_end_cycle+group.ex_wait_cycle)/F_CYC*100
-        if busy < 50: # bump to 20%
+        if busy < 50:
             target = group.ex_end_cycle - F_CYC*(1-(NMI_CLOSE_TARGET)/100)
-        else: # bump to 80%
+        else:
             target = group.ex_end_cycle - F_CYC*(NMI_CLOSE_TARGET/100)
 
         if len(group.apu_freqs) < 3:
             print("not enough data to predict, so guessing wildly")
             new_freq = group.apu_freqs[-1]
             delta = random.random()/10
-            if new_freq > 24.64:
+            if busy < 50: # need to slow down and be more busy
                 new_freq -= delta
             else:
                 new_freq += delta
         else:
             m, b = np.polyfit(group.deviations, group.apu_freqs, 1)
-            r = np.corrcoef(group.deviations, group.apu_freqs)[0, 1]
-            if r != r: # true if r is NaN
+            if abs(m) > 1e-13:
+                # if all the apu_freqs are the same (very low m), then corrcoef
+                # will whine and spit out a nan
+                r = np.corrcoef(group.deviations, group.apu_freqs)[0, 1]
+            else:
+                r = None
+            if r is None or (r**2) < 0.5: # avoid trying to predict on bad data
                 print("prediction failed, guessing wildly")
                 new_freq = group.apu_freqs[-1]
                 delta = random.random()/10
-                if new_freq > 24.64:
+                if busy < 50: # need to slow down and be more busy
                     new_freq -= delta
                 else:
                     new_freq += delta
@@ -342,7 +360,8 @@ while True:
         print()
 
     import pickle
-    pickle.dump(nmi_groups, open("p.p", "wb"))
+    pickle.dump(nmi_groups, 
+        open("autosync_nmi_cycles_{}.pickle".format(num_iters), "wb"))
 
     print("balancing cycles")
     # for every cycle we add, we have to remove from somewhere else.
