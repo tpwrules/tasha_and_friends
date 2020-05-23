@@ -389,7 +389,7 @@ while True:
 
         # otherwise, can we adjust the frequency of this group to cancel out our
         # surplus?
-        if abs(surplus + cycles_given) < 1000:
+        if abs(surplus + cycles_given) < 10:
             # avoid bothering with minor issues
             surplus += cycles_given
             continue
