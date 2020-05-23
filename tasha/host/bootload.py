@@ -97,6 +97,10 @@ class Bootloader:
         port = serial.Serial(port=port, baudrate=2_000_000, timeout=0.2)
         self.port = port
 
+        # we tolerate 3 errors before giving up. this lets us deal with
+        # transient CRC errors if there's junk in the buffers we failed to get
+        # rid of
+        attempts = 3
         try:
             if timeout is not None:
                 timed_out = time.monotonic()+timeout
@@ -109,6 +113,11 @@ class Bootloader:
                     # ignore timeouts and try to do it again, hopefully when
                     # the target has timed out and everything is reset.
                     continue
+                except BootloadError as e:
+                    if attempts > 0:
+                        attempts -= 1
+                        continue
+                    raise
                 # if the response was a success, we are done
                 return
             else: # loop condition failed, i.e. we timed out
