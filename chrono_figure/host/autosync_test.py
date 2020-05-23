@@ -14,9 +14,10 @@ from tasha.gateware.apu_calc import calculate_advanced
 
 # number of master clock cycles per frame
 F_CYC = 357366
-# frequency of master clock in MHz. currently only used during clock balancing
-# where i don't think it's value matters actually? it might?
+# nominal frequency of master clock in MHz. should match the emulator.
 M_FREQ = 21.477272
+# nominal frequency of APU clock in MHz. should match the emulator.
+A_FREQ = 24.607104
 # number of APU register accesses needed to consider a group as accessing the
 # APU. many games (i.e. dkc2 and smw) access the APU 4 times per frame to play
 # sound effects, so we set it higher than that to avoid fiddling with those.
@@ -35,6 +36,7 @@ print("loading...")
 
 timeline = json.load(open(sys.argv[1], "r"))
 t_nmis = timeline["nmis"]
+t_ls = timeline["latches"]
 
 def read_all_latches():
     latch_file = open(sys.argv[3], "rb")
@@ -79,7 +81,6 @@ def group():
     nmi_start_latches = []
     latch_num = 0
     last_nmi_start = 0
-    t_ls = timeline["latches"]
     for nmi in t_nmis:
         num_cycles = nmi["end_cycle"]-last_nmi_start
         last_nmi_start = nmi["end_cycle"]
@@ -339,3 +340,51 @@ while True:
         group.apu_freqs.append(new_freq) # will be tried next time
 
         print()
+
+    import pickle
+    pickle.dump(nmi_groups, open("p.p", "wb"))
+
+    print("balancing cycles")
+    # for every cycle we add, we have to remove from somewhere else.
+    # hypothetically, this will stop frequency adjustment in one area from
+    # affecting the next, because the total number of APU clock cycles will be
+    # the same no matter the adjustment.
+    surplus = 0 # how many cycles we have to give away
+    for gi, group in enumerate(nmi_groups):
+        latch_start = group.latch_start
+        latch_end = group.latch_start + group.num_latches
+        # how many cycles did we give (with the clock generator) this group?
+        passed_time = (t_ls[latch_end] - t_ls[latch_start])/(M_FREQ*1e6)
+        curr_freq = group.apu_freqs[-1]*1e6
+        cycles_given = int(passed_time*curr_freq+0.5)
+        # and how many were taken (by the nominal passage of time)?
+        cycles_taken = int(passed_time*A_FREQ*1e6+0.5)
+        surplus -= cycles_taken
+
+        # if this group accesses the APU, fiddling with the frequency might
+        # desync it
+        if group.apu_accesses >= MIN_APU_ACCESSES:
+            # so we just give what we have to give to stop that
+            surplus += cycles_given
+            continue
+
+        # otherwise, can we adjust the frequency of this group to cancel out our
+        # surplus?
+        if abs(surplus + cycles_given) < 1000:
+            # avoid bothering with minor issues
+            surplus += cycles_given
+            continue
+        # what frequency would that be?
+        desired_freq = (-surplus/passed_time)/1e6
+        desired_freq = min(max(desired_freq, 23), 24.75)
+        # what can we actually generate
+        _, _, desired_freq = calculate_advanced(desired_freq)
+        new_cycles_given = int(passed_time*desired_freq*1e6+0.5)
+        # would this leave us closer to a 0 surplus?
+        if abs(surplus + cycles_given) > abs(surplus + new_cycles_given):
+            surplus += new_cycles_given # then use it
+            group.apu_freqs.append(desired_freq)
+        else:
+            surplus += cycles_given # don't bother
+
+    print("surplus: {} cycles".format(surplus))
