@@ -1,0 +1,22 @@
+# this file (and others like it) list the addresses relevant to Chrono Figure.
+# this one is for Super Metroid
+# the format is <24 bit address in hex> = <kind>
+# kind can be:
+#   nmi: first instruction in the NMI handler. there can only be one.
+#   reset: first instruction in the reset handler. there can only be one.
+#   wait_start: first instruction of a wait for NMI loop. there can be many.
+#   wait_end: first instruction after a wait for NMI loop. there can be many.
+
+# POSSIBLY INCOMPLETE
+
+9583 = nmi
+841c = reset
+
+808343 = wait_start
+808348 = wait_end
+82e526 = wait_start
+82e52b = wait_end
+85813c = wait_start
+858141 = wait_end
+82e06b = wait_start
+82e070 = wait_end

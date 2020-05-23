@@ -1,0 +1,14 @@
+# this file (and others like it) list the addresses relevant to Chrono Figure.
+# this one is for Super Mario World US.
+# the format is <24 bit address in hex> = <kind>
+# kind can be:
+#   nmi: first instruction in the NMI handler. there can only be one.
+#   reset: first instruction in the reset handler. there can only be one.
+#   wait_start: first instruction of a wait for NMI loop. there can be many.
+#   wait_end: first instruction after a wait for NMI loop. there can be many.
+
+816a = nmi
+8000 = reset
+
+806b = wait_start
+806f = wait_end
