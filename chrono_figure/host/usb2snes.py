@@ -179,3 +179,45 @@ class USB2SNES:
             data += b'\x00'*(512-(len(data)%512))
         # then send it along
         self._ser_write(data)
+
+if __name__ == "__main__":
+    import argparse
+    import time
+
+    parser = argparse.ArgumentParser(description="Command USB2SNES.")
+    parser.add_argument('--port', type=str, help="Serial port USB2SNES is "
+        "attached to. Port is autodetected if not specified.")
+    sps = parser.add_subparsers(required=True, help="Action to perform.")
+
+    p_boot = sps.add_parser('boot',
+        description="Start ROM off USB2SNES's SD card.")
+    p_boot.add_argument('name', type=str, help="Filename of ROM.")
+
+    p_reset = sps.add_parser('reset', description="Reset the console.")
+    p_reset.add_argument('-m', '--menu', action="store_true",
+        help="Reset back to menu instead of the game.")
+
+    args = parser.parse_args()
+
+    usb2snes = USB2SNES()
+    if args.port is None:
+        port = detect_port()
+        if port is None:
+            print("Could not detect USB2SNES.")
+            exit(1)
+    else:
+        port = args.port
+    usb2snes.connect(port)
+    # test responsiveness. we may use the result in the future
+    info = usb2snes.get_info()
+
+    if 'name' in args: # boot mode
+        usb2snes.boot_rom(args.name)
+    elif 'menu' in args: # reset mode
+        if args.menu:
+            usb2snes.reset_to_menu()
+        else:
+            usb2snes.reset_console()
+
+    time.sleep(0.2) # wait for the command to make it
+    usb2snes.disconnect()
