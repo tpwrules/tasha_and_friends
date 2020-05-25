@@ -110,6 +110,29 @@ class ChronoFigureInterface:
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
             ADDR_CLEAR_SAVE_RAM, struct.pack("<I", CLEAR_SAVE_RAM_KEY))
 
+    def _make_matcher_config(self, address, match_type):
+        valid_address = int(address) & 0xFFFFFF
+        if valid_address != address:
+            raise CFInterfaceError("invalid address '{}'".format(address))
+        valid_match_type = int(match_type) & (2**gateware.MATCH_TYPE_BITS-1)
+        if valid_match_type != match_type:
+            raise CFInterfaceError("invalid match type '{}'".format(match_type))
+        return struct.pack("<I", (valid_address + (valid_match_type<<24)))
+
+    # configure the given matcher with the given address and type
+    def configure_matcher(self, which, address, match_type):
+        self._check_dev()
+
+        which = int(which) & 0xFFFFFFFF
+        if which > gateware.NUM_MATCHERS:
+            raise CFInterfaceError("attempted to configure matcher {}, but "
+                "the gateware has only {}".format(
+                    which, gateware.NUM_MATCHERS))
+
+        config_data = self._make_matcher_config(address, match_type)
+        self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
+            ADDR_MATCHER_CONFIG+(which*4), config_data)
+
     # configure the matchers with an iterable of (address, match_type) tuples.
     # if there are less matchers than the number of configurations, the
     # remaining matchers are disabled.
@@ -120,22 +143,14 @@ class ChronoFigureInterface:
         config_data = []
         for config in configs:
             address, match_type = config
-            valid_address = int(address) & 0xFFFFFF
-            if valid_address != address:
-                raise CFInterfaceError("invalid address '{}'".format(address))
-            valid_match_type = int(match_type) & (2**gateware.MATCH_TYPE_BITS-1)
-            if valid_match_type != match_type:
-                raise CFInterfaceError("invalid match type '{}'".format(
-                    match_type))
-            config_data.append(struct.pack("<I", 
-                (valid_address + (valid_match_type<<24))))
+            config_data.append(self._make_matcher_config(address, match_type))
 
         # make sure we have enough matchers for the configurations
         num_matchers = gateware.NUM_MATCHERS
         if len(config_data) > num_matchers:
             raise CFInterfaceError("attempted to configure {} matchers, but "
                 "the gateware has only {}".format(
-                    len(config_data, num_matchers)))
+                    len(config_data), num_matchers))
 
         # set remaining matchers to 0 = disabled
         config_data.append(b'\x00'*(4*(num_matchers-len(config_data))))
