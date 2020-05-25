@@ -1,4 +1,5 @@
-# read a log from measure_emulator.lua and write out a timeline JSON
+# read a log from measure_emulator.lua and write out the run data JSON
+# for DKC2 US v1.1
 
 import sys
 import json
@@ -18,13 +19,6 @@ if f.readline() != "hello from measure_emulator.lua v1\n":
 freqs = f.readline().split(",")
 if freqs[0] != "c":
     raise Exception("invalid frequency format")
-
-emu_info = {}
-emu_info["cpu_frequency"] = int(freqs[1])
-emu_info["smp_frequency"] = int(freqs[2])
-out["emu_info"] = emu_info
-
-out["runs"] = [] # populated based on measurements from console
 
 nmis = []
 latches = []
@@ -48,10 +42,86 @@ for line in f:
     else:
         raise Exception("invalid record type on line "+line)
 
+# figure out the latch each nmi starts at. it's when we will change the freq
+nmi_start_latches = []
+latch_num = 0
+last_nmi_start = 0
+for nmi in nmis:
+    num_cycles = nmi["end_cycle"]-last_nmi_start
+    last_nmi_start = nmi["end_cycle"]
+    # we start at this latch
+    nmi_start_latches.append(latch_num)
+    # but how many should we go?
+    orig_latch_num = latch_num
+    while latch_num<len(latches) and latches[latch_num]<(nmi["end_cycle"]-1000):
+        latch_num += 1
+    if orig_latch_num == latch_num:
+        raise Exception("oop!")
+nmi_start_latches.append(len(latches))
 
+# validate that all nmis start close to their latch (or rather that they end
+# close to the next)
+for nmi, latch in zip(nmis[:-1], nmi_start_latches[:-1]):
+    p = nmi_start_latches.index(latch)
+    if abs(latches[nmi_start_latches[p+1]]-nmi["end_cycle"]) > 1000:
+        print(nmi, latches[nmi_start_latches[p+1]], nmi["end_cycle"])
 
-out["nmis"] = nmis
-out["latches"] = latches
+# put NMIs into groups. one group is zero or more 100% busy frames followed by a
+# not busy frame. these will all be controlled by the same frequency.
+nmi_groups = []
+these_nmis = []
+for ni, nmi in enumerate(nmis):
+    # this nmi is a part of this group
+    these_nmis.append(ni)
+    if nmi["end_cycle"] == nmi["wait_cycle"]: # is this NMI 100% busy?
+        # yup, so there has to be another one in this group
+        continue
+
+    first_nmi = these_nmis[0]
+    last_nmi = these_nmis[-1]
+
+    apu_accesses = 0
+    for gnmi in nmis[first_nmi:last_nmi+1]:
+        apu_accesses += (gnmi["apu_reads"]+gnmi["apu_writes"])
+
+    nmi_groups.append({
+        # number of this group (for humans browsing the file). not actually read
+        "gid": len(nmi_groups),
+        # index of the starting NMI in this group
+        "nmi_start": first_nmi,
+        # number of NMIs in this group
+        "num_nmis": len(these_nmis),
+        # latch for the first NMI in this group
+        "latch_start": nmi_start_latches[first_nmi],
+        # number of latches in this group
+        "num_latches":
+            nmi_start_latches[last_nmi+1]-nmi_start_latches[first_nmi],
+        # how many times this group accesses the APU
+        "apu_accesses": apu_accesses,
+        # expected end of group from emulator
+        "ex_end_cycle": nmis[last_nmi]["end_cycle"],
+        # expected start of waiting from emulator
+        "ex_wait_cycle": nmis[last_nmi]["wait_cycle"],
+        # how many master clock cycles this group's latches took
+        "latch_clocks": latches[nmi_start_latches[last_nmi+1]] -\
+            latches[nmi_start_latches[first_nmi]],
+        # list of APU frequencies applied
+        "apu_freqs": [],
+        # deviations (measured_wait-ex_end_cycle) for each frequency
+        "deviations": [],
+        # if len(deviations) == len(apu_freqs), then a new frequency is
+        # determined when autosync starts. otherwise, if apu_freqs is 1 longer,
+        # that frequency is used instead.
+
+        # optional keys
+        # override: if set, always use this APU frequency
+        # balance: force inclusion if true (or exclusion if false) in balancing.
+        #   if included, then the balancer may edit the frequency.
+    })
+
+    these_nmis = []
+
+out["groups"] = nmi_groups
 
 f.close()
 f = open(sys.argv[2], "w")
