@@ -107,9 +107,14 @@ for ni, nmi in enumerate(nmis):
             latches[nmi_start_latches[first_nmi]],
         # list of APU frequencies applied
         "apu_freqs": [],
-        # deviations (measured_wait-ex_end_cycle) for each frequency
-        "deviations": [],
-        # if len(deviations) == len(apu_freqs), then a new frequency is
+        # measurements of each frequency. this is a tuple of (
+        #   actual end cycle,
+        #   actual start of waiting,
+        #   actual number of NMIs,
+        # )
+        "measurements": [],
+
+        # if len(measurements) == len(apu_freqs), then a new frequency is
         # determined when autosync starts. otherwise, if apu_freqs is 1 longer,
         # that frequency is used instead.
 
