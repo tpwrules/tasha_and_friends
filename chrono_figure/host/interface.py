@@ -176,8 +176,10 @@ class ChronoFigureInterface:
 
         while len(event_data) > 1: # each event is 2 words
             d0, d1 = event_data[:2]
-            # bit 30 is set on the first word of each event
-            if not (d0 & (1<<30)): # so skip words until we find one
+            # bit 30 is set on the first word of each event and clear on the
+            # second. skip words until we find a valid first and second. this
+            # will probably trip the "missed event" handler below.
+            if not (d0 & (1<<30)) and (d1 & (1<<30)):
                 event_data = event_data[1:]
                 continue
 
@@ -187,9 +189,14 @@ class ChronoFigureInterface:
             event_counter |= (d1 & (1<<29)) >> 28
 
             if event_counter != self.next_event_counter:
-               raise CFInterfaceError("missed event: got counter value {} but "
-                   "expected value {}".format(
-                       event_counter, self.next_event_counter))
+                # if we got some events, return them first. that way the caller
+                # will get all the events except this one. next time they call,
+                # there won't be any, so we will throw the exception.
+                if len(got_events) > 0:
+                    return got_events
+                raise CFInterfaceError("missed event: got counter value {} but "
+                    "expected value {}".format(
+                        event_counter, self.next_event_counter))
 
             self.next_event_counter += 1
             if self.next_event_counter == 4:
