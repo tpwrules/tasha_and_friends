@@ -1,5 +1,18 @@
+-- for DKC2 US v1.1
+
 script_filename = @@LUA_SCRIPT_FILENAME@@
 script_dir = script_filename:match("^(.*[/\\])")
+
+-- first instructions of a wait for NMI loop
+-- in dkc2 they are all WAI so there is no end
+wait_start_addrs = {0x808652, 0x808c9b, 0x8097ca, 0x809c96, 0x80ab78, 0x80b106,
+    0x80b54a, 0x80b6be, 0xb5d00e, 0xb5d23c, 0xb5d447}
+-- if there were, these would be the first instruction after those loops
+wait_end_addrs = {}
+-- first instruction of NMI handler
+nmi_addr = 0xf3bd
+-- first instruction of reset handler
+reset_addr = 0x83f7
 
 out_f = nil
 
@@ -104,59 +117,7 @@ function nmi_fired(addr, value)
     joy_writes = 0
 end
 
-function measure(addr_fname, out_fname)
-    local addr_f, wait_start_addrs, wait_end_addrs, nmi_addr, reset_addr
-    -- read and parse the addresses from the given file
-    addr_f = io.open(addr_fname, "r");
-    wait_start_addrs = {}
-    wait_end_addrs = {}
-    nmi_addr = nil
-    reset_addr = nil
-    while true do
-        local line = addr_f:read("*line")
-        if line == nil then break end
-
-        -- remove comments
-        local ci = line:find("#")
-        local clean_line = line
-        if ci ~= nil then
-            clean_line = line:sub(1, ci-1)
-        end
-        -- and whitespace
-        clean_line = clean_line:match("^%s*(.-)%s*$")
-        if clean_line == "" then goto continue end
-
-        local addr, kind
-        addr, kind = clean_line:match("^([0-9a-fA-F]+)%s*=%s*([a-z_]+)$")
-        if addr == nil then
-            print("WARNING: invalid line "..line)
-            goto continue
-        end
-
-        if kind == "nmi" then
-            if nmi_addr ~= nil then
-                print("WARNING: duplicate NMI (full line: "..line..")")
-                goto continue
-            end
-            nmi_addr = tonumber(addr, 16)
-        elseif kind == "reset" then
-            if reset_addr ~= nil then
-                print("WARNING: duplicate reset (full line: "..line..")")
-                goto continue
-            end
-            reset_addr = tonumber(addr, 16)
-        elseif kind == "wait_start" then
-            table.insert(wait_start_addrs, tonumber(addr, 16))
-        elseif kind == "wait_end" then
-            table.insert(wait_end_addrs, tonumber(addr, 16))
-        else
-            print("WARNING: unknown kind '"..kind.."' (full line: "..line..")")
-        end
-
-        ::continue::
-    end
-    addr_f:close()
-
+function measure(out_fname)
     -- register the addresses we were given
     for i, wait_start_addr in ipairs(wait_start_addrs) do
         memory.registerexec("BUS", wait_start_addr, started_waiting)
