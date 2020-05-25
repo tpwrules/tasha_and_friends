@@ -293,15 +293,7 @@ def do_measure():
         while True:
             while len(events) == 0 and not finished:
                 ls.communicate() # keep tasha full
-                try:
-                    events.extend(cf.get_events())
-                except KeyboardInterrupt:
-                    raise
-                except:
-                    import traceback
-                    traceback.print_exc()
-                    finished = True
-
+                events.extend(cf.get_events())
                 time.sleep(0.1)
 
             if len(events) == 0: break
