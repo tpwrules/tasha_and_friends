@@ -36,6 +36,8 @@ for line in f:
         nmi["apu_writes"] = bits[7]
         nmi["joy_reads"] = bits[8]
         nmi["joy_writes"] = bits[9]
+        nmi["door_check"] = bool(bits[10])
+        nmi["door_pass"] = bool(bits[11])
         nmi["measurements"] = []
 
         nmis.append(nmi)
@@ -68,12 +70,30 @@ for p, z in enumerate(zip(nmis[:-1], nmi_start_latches[:-1])):
 # not busy frame. these will all be controlled by the same frequency.
 nmi_groups = []
 these_nmis = []
-for ni, nmi in enumerate(nmis):
+
+# if we are currently checking to see if sound effects are done as part of a
+# door transition
+checking_door = False
+# list of some properties of all the doors we've seen
+doors = []
+# current ID of the door we're checking
+curr_door_id = 0
+
+# skip last nmi because i know it's not meaningful and it screws things up
+# because we don't have a latch for it
+for ni, nmi in enumerate(nmis[:-1]):
     # this nmi is a part of this group
     these_nmis.append(ni)
     if nmi["end_cycle"] == nmi["wait_cycle"]: # is this NMI 100% busy?
         # yup, so there has to be another one in this group
         continue
+
+    door_check = nmis[these_nmis[0]]["door_check"]
+    door_pass = nmis[these_nmis[0]]["door_pass"]
+    for n in these_nmis[1:]:
+        if nmis[n]["door_check"] != door_check or \
+                nmis[n]["door_pass"] != door_pass:
+            raise Exception("oh no, group is disdoordant")
 
     first_nmi = these_nmis[0]
     last_nmi = these_nmis[-1]
@@ -82,7 +102,7 @@ for ni, nmi in enumerate(nmis):
     for gnmi in nmis[first_nmi:last_nmi+1]:
         apu_accesses += (gnmi["apu_reads"]+gnmi["apu_writes"])
 
-    nmi_groups.append({
+    nmi_group = {
         # number of this group (for humans browsing the file). not actually read
         "gid": len(nmi_groups),
         # index of the starting NMI in this group
@@ -120,8 +140,33 @@ for ni, nmi in enumerate(nmis):
         # override: if set, always use this APU frequency
         # balance: force inclusion if true (or exclusion if false) in balancing.
         #   if included, then the balancer may edit the frequency.
-    })
+    }
 
+    if not checking_door and door_check:
+        # this is the first group waiting for sound effects to complete
+        checking_door = True
+
+        # make a new entry in the door list
+        doors.append({})
+        # mark a few previous as leading up to the door so we can know to expect
+        # it (and have some latitude on changes)
+        for pre_door in nmi_groups[-3:]:
+            pre_door["door"] = "d"+str(curr_door_id)
+            pre_door["door_state"] = "precheck"
+
+    if checking_door:
+        # note which door this group belongs to
+        nmi_group["door"] = "d"+str(curr_door_id)
+        nmi_group["door_state"] = "check"
+
+    if door_pass:
+        # the sound effects have completed and next frame we will load the room.
+        # this will overwrite the door state above but "pass" implies check too
+        nmi_group["door_state"] = "pass"
+        checking_door = False
+        curr_door_id += 1
+
+    nmi_groups.append(nmi_group)
     these_nmis = []
 
 out["groups"] = nmi_groups

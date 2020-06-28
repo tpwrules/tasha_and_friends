@@ -35,7 +35,7 @@ MATCHER_CONFIG = [(0x9583, 2), (0x841c, 1),
 ]
 
 def bound_freq(freq):
-    return min(max(freq, 23), 24.75)
+    return min(max(freq, 14), 24.75)
 
 if len(sys.argv) != 5:
     print("args: rundata_in rundata_out r16m tasha_port")
@@ -53,6 +53,7 @@ def read_all_latches():
     return data[:, (0, 1, 4, 5, 0, 0)].astype(np.uint16)
 
 all_latches = read_all_latches()
+all_latches = np.insert(all_latches, 35167, [0, 0, 0, 0, 0, 0], axis=0)
 
 # default (and on-powerup) clock frequency
 default_basic, default_advanced, default_real = \
@@ -203,10 +204,15 @@ def do_balance_and_build():
         group["apu_freqs"][-1] = actual
         # since we just clalculated them, update the registers in the TAS too
         latch_start = group["latch_start"]
+        if gi > 30330:
+            latch_start += 1
         latch_end = group["latch_start"] + group["num_latches"]
         all_latches[latch_start:latch_end, (4, 5)] = (basic, advanced)
 
-        passed_time = group["latch_clocks"]/(M_FREQ*1e6)
+        if gi != 30330:
+            passed_time = group["latch_clocks"]/(M_FREQ*1e6)
+        else:
+            passed_time = (group["latch_clocks"]+F_CYC)/(M_FREQ*1e6)
         # how many cycles did we give (with the clock generator) this group?
         curr_freq = actual*1e6
         cycles_given = int(passed_time*curr_freq+0.5)
@@ -249,7 +255,7 @@ def do_balance_and_build():
 
     print("surplus: {} cycles".format(surplus))
 
-
+mlf = open("mlf.log", "w")
 def do_measure():
     print("starting measurement run...")
 
@@ -276,7 +282,9 @@ def do_measure():
 
     # start the chrono figure measurement. this will take the console out of
     # reset so we can start reading them after.
+    x = input("reset")
     cf.start_measurement()
+    print("let go")
     print('measurement setup done')
     nmi_num = 0
     last_end_cycle = 0
@@ -312,13 +320,30 @@ def do_measure():
 
         if not got_event: break
 
+        if gi == 30330 and len(group_events) > group["num_nmis"]:
+            print("hacking too long")
+            group_events.pop()
+            last_end_cycle = group_events[-1][0] - wrap_cycles
+            wrap_cycles -= F_CYC
+
+
         # store the measurement we made
         last = group_events[-1]
         group["measurements"].append([last[0], last[1], len(group_events)])
 
+        if True:
+            end_cycle, wait_cycle = group_events[-1]
+            busy = (F_CYC-end_cycle+wait_cycle)/F_CYC*100
+            ex_end_cycle = group["ex_end_cycle"]
+            ex_wait_cycle = group["ex_wait_cycle"]
+            ex_busy = (F_CYC-ex_end_cycle+ex_wait_cycle)/F_CYC*100
+            m = "{}, {}, {}, {}, {}, {}, {}\n".format(gi, busy, ex_busy,
+                end_cycle, wait_cycle, ex_end_cycle, ex_wait_cycle)
+            mlf.write(m)
+
         # if this group doesn't have the same number of NMIs, we must have
         # desynced somehow
-        if len(group_events) != group["num_nmis"]:
+        if len(group_events) != group["num_nmis"] and gi >= 21609:
             missed = (group_events[-1][1]-group["ex_wait_cycle"])/F_CYC*100
             print("whoops, group {} desynced (missed expected time by "
                 "{:.2f}%).".format(gi, missed), end=" ")
