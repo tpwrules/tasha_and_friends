@@ -192,6 +192,11 @@ class USB2SNES:
     # boot the SNES ROM off the SD card with the given file name
     def boot_rom(self, path):
         encoded_path, parts = self.parse_path(path)
+        # trying to boot a ROM that doesn't exist will do weird things and
+        # require a menu reset, so we don't allow nonexistent ROMs to be booted
+        contents = self.list_dir('/'.join(parts[:-1]))
+        if parts[-1] not in contents:
+            raise FileError(path, "ROM does not exist")
         if "." not in parts[-1]:
             # attempting to boot such names will crash the USB2SNES
             raise FileError(path, "name has no period (.)")
