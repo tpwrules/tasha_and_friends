@@ -77,6 +77,7 @@ OP_MKDIR = 5
 OP_RM = 6
 OP_RESET = 8
 OP_BOOT = 9
+OP_POWER_CYCLE = 10
 OP_INFO = 11
 OP_MENU_RESET = 12
 
@@ -180,6 +181,13 @@ class USB2SNES:
     # reset back to the menu. has no effect if the menu is currently running,
     def reset_to_menu(self):
         self._send_command(OP_MENU_RESET, SPACE_SNES)
+
+    # reset the USB2SNES's microcontroller. implies disconnection.
+    def reset_microcontroller(self):
+        self._send_command(OP_POWER_CYCLE, SPACE_SNES)
+        # this will sever the USB connection, so make sure we recognize that
+        time.sleep(0.2)
+        self.disconnect()
 
     # boot the SNES ROM off the SD card with the given file name
     def boot_rom(self, path):
@@ -428,6 +436,8 @@ if __name__ == "__main__":
     p_reset = sps.add_parser('reset', description="Reset the console.")
     p_reset.add_argument('-m', '--menu', action="store_true",
         help="Reset back to menu instead of the game.")
+    p_reset.add_argument('-u', '--microcontroller', action="store_true",
+        help="Reset the USB2SNES microcontroller. Implies '-m'.")
     p_reset.set_defaults(action="reset")
 
     p_ls = sps.add_parser('ls', description="List directory on SD card.")
@@ -483,7 +493,9 @@ if __name__ == "__main__":
             print(str(e))
         time.sleep(0.2) # wait for the command to make it
     elif args.action == "reset":
-        if args.menu:
+        if args.microcontroller:
+            usb2snes.reset_microcontroller()
+        elif args.menu:
             usb2snes.reset_to_menu()
         else:
             usb2snes.reset_console()
