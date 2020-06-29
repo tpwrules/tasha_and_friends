@@ -20,12 +20,8 @@ import serial.tools.list_ports
 # Errors during certain file operations can crash the USB2SNES and require that
 # the console be power-cycled. This includes reading nonexistent files, and
 # (inexplicably) attempting to boot a ROM without a period (.) in its name.
-
-# To mitigate the danger, each component of the path is listed with the LS
-# command to verify that the next component exists. This also allows for more
-# precise error messages. LS results are cached to improve performance. If this
-# is undesirable, then the 'check' parameter can be set to False when calling a
-# function that deals with files (though the cache will still be used).
+# These situations are checked for an an exception is thrown if they are about
+# to occur.
 
 
 
@@ -63,18 +59,13 @@ class USB2SNESError(Exception): pass
 
 class Timeout(USB2SNESError): pass
 
-class PathError(USB2SNESError):
-    def __init__(self, path, problem, component=None):
+class FileError(USB2SNESError):
+    def __init__(self, path, problem):
         self.path = path
         self.problem = problem
-        self.component = component
 
     def __str__(self):
-        if self.component is None:
-            return "Path '{}': {}".format(self.path, self.problem)
-        else:
-            return "Path '{}': '{}' {}".format(
-                self.path, self.component, self.problem)
+        return "Path '{}': {}".format(self.path, self.problem)
 
 USB2SNESInfo = namedtuple("USB2SNESInfo", [
     "fw_version", # CONFIG_FWVER: firmware version as a 32 bit number
@@ -89,7 +80,6 @@ class USB2SNES:
     def __init__(self):
         # we don't have a port until we're connected
         self.port = None
-        self._dir_cache = {"": None} # holds the root directory
 
     def _ser_read(self, length):
         if self.port is None:
@@ -127,7 +117,6 @@ class USB2SNES:
 
         port = self.port
         self.port = None
-        self._dir_cache = {"": None}
         try:
             port.close()
         except:
@@ -161,12 +150,11 @@ class USB2SNES:
         self._send_command(OP_MENU_RESET, SPACE_SNES)
 
     # boot the SNES ROM off the SD card with the given file name
-    def boot_rom(self, path, check=True):
-        encoded_path, parts, kind = self.parse_path(path, check=check)
-        if kind != "unknown" and kind != "file":
-            raise PathError(path, "does not exist", parts[-1])
+    def boot_rom(self, path):
+        encoded_path, parts = self.parse_path(path)
         if "." not in parts[-1]:
-            raise PathError(path, "name has no period (.)", parts[-1])
+            # attempting to boot such names will crash the USB2SNES
+            raise FileError(path, "name has no period (.)")
         self._send_command(OP_BOOT, SPACE_SNES, arg_data=encoded_path)
 
     # read various pieces of information about what's going on
@@ -217,14 +205,14 @@ class USB2SNES:
         self._ser_write(data)
 
 
-    # parse a path and return the final encoded filename, the list of
-    # components (parts), and what kind of thing the last component is
-    def parse_path(self, path, check=True):
+    # parse a path and return the final encoded filename along with the list of
+    # components (parts)
+    def parse_path(self, path):
         # make sure the path actually is ASCII before we do anything to it
         try:
             path.encode("ascii")
         except UnicodeEncodeError as e:
-            raise PathError(path, "", str(e)) from None
+            raise FileError(path, str(e)) from None
 
         # canonicalize the path to remove "."s, ".."s, and extra "/"s
         parts = [""] # root directory is at the start
@@ -233,63 +221,24 @@ class USB2SNES:
                 continue
             elif part == "..":
                 if len(parts) == 1:
-                    raise PathError(path, "traversing above root directory",
-                        part) from None
+                    raise FileError(path,
+                        "traversing above root directory") from None
                 parts.pop()
             else:
                 parts.append(part)
 
-        # validate that everything exists along the way
-        curr_dir = self._dir_cache
-        for part_i, part in enumerate(parts):
-            # the current directory is the one that allegedly contains this part
-            if curr_dir is None: # we know it exists, but not what's in it
-                if not check: # and we're not allowed to go ask
-                    break
-                # figure that out (list_dir will update the cache)
-                self.list_dir("/".join(parts[:part_i]))
-                curr_dir = prev_dir[parts[part_i-1]]
-            # we don't want to traverse into the last part
-            if part_i == len(parts)-1: break
-
-            prev_dir = curr_dir
-            try:
-                curr_dir = curr_dir[part]
-            except KeyError:
-                raise PathError(path, "does not exist", part) from None
-            if curr_dir is not None and not isinstance(curr_dir, dict):
-                raise PathError(path, "not a directory", part)
-
-        # if we know what's in the directory, figure out what we're pointing to
-        if curr_dir is not None:
-            try:
-                entry = curr_dir[parts[-1]]
-                if entry is None or isinstance(entry, dict):
-                    kind = "dir"
-                else:
-                    kind = "file"
-            except KeyError:
-                kind = "nothing"
-        else:
-            kind = "unknown"
-
-        validated_path = "/".join(parts[1:]).encode("ascii")
-        if len(validated_path) > 255:
-            raise PathError(path, "too long", validated_path)
-        return validated_path, parts, kind
+        encoded_path = "/".join(parts[1:]).encode("ascii")
+        if len(encoded_path) > 255:
+            raise FileError(encoded_path.decode("ascii"), "path is too long")
+        return encoded_path, parts
 
 
-    def list_dir(self, path, check=True):
-        encoded_path, parts, kind = self.parse_path(path, check=check)
-        if kind != "unknown":
-            if kind == "nothing":
-                raise PathError(path, "does not exist", parts[-1])
-            elif kind != "dir":
-                raise PathError(path, "not a directory", parts[-1])
+    def list_dir(self, path):
+        encoded_path, parts = self.parse_path(path)
         self._send_command(OP_LS, SPACE_FILE, arg_data=encoded_path, resp=True)
         resp = self._ser_read(512)
         if resp[5]:
-            raise USB2SNESError("{}: failed to list".format(path))
+            raise FileError(path, "failed to list directory")
 
         list_result = {}
         finished = False
@@ -309,69 +258,36 @@ class USB2SNES:
 
                 if filename == "." or filename == "..": continue
                 if is_dir:
-                    list_result[filename] = None
+                    list_result[filename] = "dir"
                 else:
-                    list_result[filename] = "a file"
-
-        # update the cache with what we learned (if the parent directory's
-        # contents are in the cache)
-        curr_dir = self._dir_cache
-        for part in parts[:-1]:
-            try:
-                curr_dir = curr_dir[part]
-            except KeyError:
-                break
-            if curr_dir is None:
-                break
-        else:
-            curr_dir[parts[-1]] = list_result
+                    list_result[filename] = "file"
 
         return list_result
 
     # create an empty directory
-    def make_dir(self, path, check=True):
-        encoded_path, parts, kind = self.parse_path(path, check=check)
-        if kind != "unknown":
-            if kind != "nothing":
-                raise PathError(path, "already exists", parts[-1])
+    def make_dir(self, path):
+        encoded_path, parts = self.parse_path(path)
 
-        try:
-            self._send_command(OP_MKDIR, SPACE_FILE,
-                arg_data=encoded_path, resp=True)
-            resp = self._ser_read(512)
-            if resp[5]:
-                raise USB2SNESError("{}: failed to create".format(path))
-        except:
-            # no idea what happened now
-            self._dir_cache = {"": None}
-            raise
-
-        # update the cache if the parent directory's contents are in it
-        curr_dir = self._dir_cache
-        for part in parts[:-1]:
-            try:
-                curr_dir = curr_dir[part]
-            except KeyError:
-                break
-            if curr_dir is None:
-                break
-        else:
-            curr_dir[parts[-1]] = {}
-
-    # read a file from the SD card and return its data as bytes
-    def read_file(self, path, check=True):
-        encoded_path, parts, kind = self.parse_path(path, check=check)
-        if kind != "unknown":
-            if kind == "nothing":
-                raise PathError(path, "does not exist", parts[-1])
-            elif kind != "file":
-                raise PathError(path, "not a file", parts[-1])
-        self._send_command(OP_GET, SPACE_FILE, arg_data=encoded_path, resp=True)
-
+        self._send_command(OP_MKDIR, SPACE_FILE,
+            arg_data=encoded_path, resp=True)
         resp = self._ser_read(512)
         if resp[5]:
-            # read errors will most probably crash the USB2SNES
-            raise USB2SNESError("{}: failed to read".format(path))
+            raise FileError(path, "failed to create directory")
+
+    # read a file from the SD card and return its data as bytes
+    def read_file(self, path):
+        encoded_path, parts = self.parse_path(path)
+        # trying to read a file that does not exist will crash the USB2SNES, so
+        # we ensure it's in the directory before we try
+        contents = self.list_dir('/'.join(parts[:-1]))
+        if parts[-1] not in contents:
+            raise FileError(path, "file does not exist")
+
+        self._send_command(OP_GET, SPACE_FILE, arg_data=encoded_path, resp=True)
+        resp = self._ser_read(512)
+        if resp[5]:
+            raise FileError(path, "failed to read file (this probably crashed "
+                "the USB2SNES)")
 
         file_size = struct.unpack(">I", resp[252:256])[0]
         num_blocks = (file_size+511) >> 9
@@ -384,74 +300,34 @@ class USB2SNES:
 
     # fill some file with bytes on the SD card. if it exists, the file is
     # overwritten
-    def write_file(self, data, path, check=True):
-        encoded_path, parts, kind = self.parse_path(path, check=check)
-        if kind != "unknown":
-            if kind != "file" and kind != "nothing":
-                raise PathError(path, "not a file", parts[-1])
+    def write_file(self, data, path):
+        encoded_path, parts = self.parse_path(path)
 
-        try:
-            self._send_command(OP_PUT, SPACE_FILE,
-                arg_size=len(data), arg_data=encoded_path, resp=True)
-            resp = self._ser_read(512)
-            if resp[5]:
-                raise USB2SNESError("{}: failed to write".format(path))
+        if parts == ["", "sd2snes", "config.yml"]:
+            raise FileError(path, "failed to write file: writing to "
+                "sd2snes/config.yml would crash the USB2SNES")
 
-            # pad the file data out to full 512 byte blocks
-            if len(data) % 512 > 0:
-                data += b'\x00'*(512-(len(data)%512))
-            # then send it along
-            self._ser_write(data)
-        except:
-            # no idea what happened now
-            self._dir_cache = {"": None}
-            raise
+        self._send_command(OP_PUT, SPACE_FILE,
+            arg_size=len(data), arg_data=encoded_path, resp=True)
+        resp = self._ser_read(512)
+        if resp[5]:
+            raise FileError(path, "failed to write file")
 
-        # update the cache if the parent directory's contents are in it
-        curr_dir = self._dir_cache
-        for part in parts[:-1]:
-            try:
-                curr_dir = curr_dir[part]
-            except KeyError:
-                break
-            if curr_dir is None:
-                break
-        else:
-            curr_dir[parts[-1]] = "a file"
+        # pad the file data out to full 512 byte blocks
+        if len(data) % 512 > 0:
+            data += b'\x00'*(512-(len(data)%512))
+        # then send it along
+        self._ser_write(data)
 
     # remove a file (or empty directory) from the SD card
-    def remove_file(self, path, check=True):
-        encoded_path, parts, kind = self.parse_path(path, check=check)
-        if kind != "unknown":
-            if kind == "nothing":
-                raise PathError(path, "does not exist", parts[-1])
-            if kind == "dir" and check:
-                contents = self.list_dir(path)
-                if len(contents) > 0:
-                    raise PathError(path, "directory not empty", parts[-1])
+    def remove_file(self, path):
+        encoded_path, parts = self.parse_path(path)
 
-        try:
-            self._send_command(OP_RM, SPACE_FILE,
-                arg_data=encoded_path, resp=True)
-            resp = self._ser_read(512)
-            if resp[5]:
-                raise USB2SNESError("{}: failed to remove".format(path))
-        except:
-            # no idea what happened now
-            self._dir_cache = {"": None}
-            raise
-
-        # update the cache if the parent directory's contents are in it
-        curr_dir = self._dir_cache
-        for part in parts[:-1]:
-            try:
-                curr_dir = curr_dir[part]
-            except KeyError:
-                break
-            if curr_dir is None:
-                break
-        else:
-            del curr_dir[parts[-1]]
+        self._send_command(OP_RM, SPACE_FILE,
+            arg_data=encoded_path, resp=True)
+        resp = self._ser_read(512)
+        if resp[5]:
+            raise FileError(path, "failed to remove")
 
 
 def file_action(args, usb2snes):
@@ -471,7 +347,7 @@ def file_action(args, usb2snes):
         dest = dest.parent.resolve(strict=True)/dest.name
 
         # make sure there aren't any problems in the given path
-        encoded_path, parts, _ = usb2snes.parse_path(args.source_path)
+        encoded_path, parts = usb2snes.parse_path(args.source_path)
         if dest.is_dir():
             dest = dest/parts[-1]
 
@@ -481,12 +357,18 @@ def file_action(args, usb2snes):
     elif args.action == "put":
         source = pathlib.Path(args.source_path).resolve(strict=True)
         dest = args.dest_path
-        encoded_path, parts, kind = usb2snes.parse_path(dest)
+        encoded_path, parts = usb2snes.parse_path(dest)
+
+        # if the destination is a directory, put a file in that directory
+        if len(parts) == 1:
+            kind = "dir" # the root directory
+        else:
+            kind = usb2snes.list_dir('/'.join(parts[:-1])).get(parts[-1])
         if dest.endswith("/") and kind == "file":
-            raise PathError(dest, "not a directory", parts[-1])
+            raise FileError(dest, "destination is not a directory")
         if kind == "dir":
             dest += ("/" + source.name)
-            encoded_path, _, _ = usb2snes.parse_path(dest)
+            encoded_path, _ = usb2snes.parse_path(dest)
 
         print(source, "->", encoded_path.decode("ascii"))
         data = source.read_bytes()
@@ -565,7 +447,7 @@ if __name__ == "__main__":
     if args.action == "boot":
         try:
             usb2snes.boot_rom(args.path)
-        except PathError as e:
+        except FileError as e:
             print(str(e))
         time.sleep(0.2) # wait for the command to make it
     elif args.action == "reset":
@@ -577,7 +459,7 @@ if __name__ == "__main__":
     else:
         try:
             file_action(args, usb2snes)
-        except PathError as e:
+        except FileError as e:
             print(str(e))
 
     usb2snes.disconnect()
