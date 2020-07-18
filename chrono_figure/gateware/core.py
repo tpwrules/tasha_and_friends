@@ -7,7 +7,7 @@ import types
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 2
+GATEWARE_VERSION = 3
 
 # all the types of matches
 MATCH_TYPE_NONE = 0
@@ -26,9 +26,9 @@ class Matcher(Elaboratable):
         self.i_snes_addr = Signal(24) # address the snes is accessing
         self.i_snes_rd = Signal() # 1 the cycle the snes starts reading
 
-        # configuration word to set type and address
-        self.i_config = Signal(32)
-        self.i_config_we = Signal()
+        # configuration input to set type and address
+        self.i_config_data = Signal(8)
+        self.i_config_we = Signal(4) # one per byte
 
         self.o_match_type = Signal(MATCH_TYPE_BITS)
 
@@ -38,11 +38,14 @@ class Matcher(Elaboratable):
         match_addr = Signal(24)
         match_type = Signal(MATCH_TYPE_BITS)
 
-        with m.If(self.i_config_we):
-            m.d.sync += [
-                match_addr.eq(self.i_config[0:24]),
-                match_type.eq(self.i_config[24:24+MATCH_TYPE_BITS]),
-            ]
+        with m.If(self.i_config_we[0]):
+            m.d.sync += match_addr[0:8].eq(self.i_config_data)
+        with m.If(self.i_config_we[1]):
+            m.d.sync += match_addr[8:16].eq(self.i_config_data)
+        with m.If(self.i_config_we[2]):
+            m.d.sync += match_addr[16:24].eq(self.i_config_data)
+        with m.If(self.i_config_we[3]):
+            m.d.sync += match_type.eq(self.i_config_data[0:MATCH_TYPE_BITS])
 
         with m.If(self.i_snes_rd):
             with m.If(self.i_snes_addr == match_addr):
@@ -116,16 +119,36 @@ class ChronoFigureCore(Elaboratable):
         # buffer the matcher input signals to ensure the best timing
         mb_addr = Signal(24)
         mb_snes_read_started = Signal()
-        mb_config = Signal(32)
-        mb_config_addr = Signal(8)
-        mb_config_we = Signal()
         m.d.sync += [
             mb_addr.eq(b.addr),
             mb_snes_read_started.eq(snes_read_started),
-            mb_config.eq(self.i_config),
-            mb_config_addr.eq(self.i_config_addr),
-            mb_config_we.eq(self.i_config_we),
         ]
+
+        mb_config_data = Signal(8)
+        mb_config_addr = Signal(MATCHER_BITS)
+        mb_config_we = Signal(4) # one line per byte
+        # convert 32 bit config word into four 8 bit writes
+        config_tmp = Signal(32)
+        with m.FSM("IDLE"):
+            with m.State("IDLE"):
+                # latch current config input
+                m.d.sync += [
+                    mb_config_we.eq(0),
+                    config_tmp.eq(self.i_config),
+                    mb_config_addr.eq(self.i_config_addr),
+                ]
+                with m.If(self.i_config_we):
+                    # when write enable is asserted, we will write what we latch
+                    # this cycle over the next four
+                    m.next = "WB0"
+
+            for byte_i in range(4):
+                with m.State("WB{}".format(byte_i)):
+                    m.d.sync += [
+                        mb_config_we.eq(1<<byte_i),
+                        mb_config_data.eq(config_tmp[byte_i*8:(byte_i+1)*8]),
+                    ]
+                    m.next = "WB{}".format(byte_i+1) if byte_i < 3 else "IDLE"
 
         # wire up all the matchers
         matcher_results = []
@@ -136,9 +159,9 @@ class ChronoFigureCore(Elaboratable):
                 matcher.i_snes_addr.eq(mb_addr),
                 matcher.i_snes_rd.eq(mb_snes_read_started),
 
-                matcher.i_config.eq(mb_config),
-                matcher.i_config_we.eq(mb_config_we & \
-                    (mb_config_addr[:MATCHER_BITS] == matcher_num)),
+                matcher.i_config_data.eq(mb_config_data),
+                matcher.i_config_we.eq(Mux(mb_config_addr == matcher_num,
+                    mb_config_we, 0)),
             ]
             matcher_results.append(matcher.o_match_type)
 
