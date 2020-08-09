@@ -392,6 +392,7 @@ def send_status_packet(buf_size):
 # needs to be really fast. we have less than 30 instructions per word!
 def cmd_send_latches(controller_addrs, buf_size):
     num_controllers = len(controller_addrs)
+    latch_buf_size = calc_buf_size(num_controllers)
     lp = "_{}_".format(random.randrange(2**32))
     r = RegisterManager(
         "R7:lr R6:comm_word R5:error_code R4:stream_pos "
@@ -413,12 +414,17 @@ def cmd_send_latches(controller_addrs, buf_size):
     r += "R0:buf_addr R4:temp R5:rxlr"
     fw.append([
     L(lp+"right_pos"),
-        # we assume we have space at the head. figure out its address
+        # figure out the address where we'll be sticking the latches
         i_calc_latch_addr(r.buf_addr, r.buf_head, num_controllers),
-
+        # if everything goes well, we'll have received all of them. if it
+        # doesn't, we won't store these calculated values and so the buffer head
+        # and stream position won't actually be advanced.
+        ADD(r.input_stream_pos, r.input_stream_pos, r.length),
+        ADD(r.buf_head, r.buf_head, r.length),
+        CMPI(r.buf_head, latch_buf_size),
+        BLTU(lp+"loop"),
+        SUBI(r.buf_head, r.buf_head, latch_buf_size),
     L(lp+"loop"),
-        # keep the interface full
-        JAL(r.lr, "update_interface"),
     ])
     # receive all the words in this latch
     for controller_i in range(num_controllers):
@@ -429,29 +435,16 @@ def cmd_send_latches(controller_addrs, buf_size):
     fw.append([
         # keep the interface full
         JAL(r.lr, "update_interface"),
-
-        # stream advanced by 1
-        ADDI(r.input_stream_pos, r.input_stream_pos, 1),
-
-        # bump the head correspondingly
-        ADDI(r.buf_head, r.buf_head, 1),
-        CMPI(r.buf_head, buf_size),
-        BNE(lp+"not_wrapped"),
-        # we're at the end, reset back to the start
-        MOVI(r.buf_head, 0),
-        MOVI(r.buf_addr, LATCH_BUF_START),
-        # do we have any latches remaining?
-        SUBI(r.length, r.length, 1),
-        BNZ(lp+"loop"), # yup, go take care of them
-        J(lp+"loop_done"),
-    L(lp+"not_wrapped"),
-        # we're not at the end, advance the buffer appropriately
+        # advance to the next buffer position
         ADDI(r.buf_addr, r.buf_addr, num_controllers),
+        CMPI(r.buf_addr, LATCH_BUF_START+num_controllers*latch_buf_size),
+        BNE(lp+"not_wrapped"),
+        MOVI(r.buf_addr, LATCH_BUF_START),
+    L(lp+"not_wrapped"),
         # do we have any latches remaining?
         SUBI(r.length, r.length, 1),
         BNZ(lp+"loop"), # yup, go take care of them
 
-    L(lp+"loop_done"),
         # receive and validate the CRC
         JAL(r.rxlr, "rx_comm_word"),
     ])
@@ -464,7 +457,8 @@ def cmd_send_latches(controller_addrs, buf_size):
         AND(r.temp, r.temp, r.temp),
         # oh no, we were right. go handle it.
         BZ0("handle_error"),
-        # if the CRC validated, then we need to update the head pointer
+        # if the CRC validated, then all the data is good and we can update the
+        # head pointer in order to actually save the latches
         MOVR(r.vars, "vars"),
         ST(r.buf_head, r.vars, Vars.buf_head),
         # and stream position
