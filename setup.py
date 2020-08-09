@@ -1,5 +1,12 @@
 from setuptools import setup, find_packages
 
+# WARNING!!!!!
+# this must be installed with python3 -m pip install <dir with setup.py>
+
+# if you try python3 <dir with setup.py/setup.py install then the git versions
+# of the packages will not be used and everything will be broken.
+# symptoms include ModuleNotFoundError: No module named 'boneless.arch'
+
 setup(
     name="tastaf",
     version="0.1",
@@ -12,8 +19,8 @@ setup(
         "pyserial",
 
         # somewhat temporary for now. not super sure if these are stable.
-        "boneless @ git+https://github.com/whitequark/Boneless-CPU@b472ec065f7a5b2708996fbc531e355f3800b0e8#egg=boneless",
-        "nmigen @ git+https://github.com/nmigen/nmigen@0e40dc0a2d336945dfe0669207fe160cafff50dc#egg=nmigen",
-        "nmigen_boards @ git+https://github.com/nmigen/nmigen-boards@18315d8efc4b2d0569ff1abf19a92f495de7745d#egg=nmigen_boards",
+        "boneless @ git+https://github.com/whitequark/Boneless-CPU@bdf1eefccc86f4c4b23ad69172b4a441a29c29cf#egg=boneless",
+        "nmigen @ git+https://github.com/nmigen/nmigen@d964ba9cc45490b141c8c4c4c3d8add1a26a739d#egg=nmigen",
+        "nmigen_boards @ git+https://github.com/nmigen/nmigen-boards@f26a72913e9293ccb7f609a25ffa3bc0d33e0a79#egg=nmigen_boards",
     ]
 )

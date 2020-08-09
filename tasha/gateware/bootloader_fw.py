@@ -91,7 +91,7 @@ BOOTLOADER_VERSION = 4
 
 # very, very temporary. will eventually be automatically detected and managed
 # somehow
-GATEWARE_VERSION = 4
+GATEWARE_VERSION = 5
 
 
 # MEMORY MAP
