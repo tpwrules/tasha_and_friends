@@ -1,15 +1,14 @@
 from nmigen import *
-from nmigen.lib.cdc import FFSynchronizer
 from nmigen.lib.fifo import SyncFIFOBuffered
 from nmigen.back import verilog
 
-import types
 # all the MATCH_ constants (and NUM_MATCHERS + MATCHER_BITS)
 from .match_info import *
+from .snes_bus import SNESBus
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1000
+GATEWARE_VERSION = 1001
 
 class Matcher(Elaboratable):
     def __init__(self):
@@ -45,18 +44,7 @@ class Matcher(Elaboratable):
 
 
 class ChronoFigureCore(Elaboratable):
-    def __init__(self):
-        # the snes bus inputs
-        self.i_snes_addr = Signal(24)
-        self.i_snes_periph_addr = Signal(8)
-        self.i_snes_rd = Signal()
-        self.i_snes_wr = Signal()
-        self.i_snes_pard = Signal()
-        self.i_snes_pawr = Signal()
-        self.i_snes_clock = Signal()
-        # pulses high right after reset ends. not accurate.
-        self.i_snes_reset = Signal()
-
+    def __init__(self, cart_signals):
         self.i_config = Signal(32) # configuration word
         self.i_config_addr = Signal(8) # which matcher to apply it to
         self.i_config_we = Signal() # write word to the address
@@ -70,48 +58,20 @@ class ChronoFigureCore(Elaboratable):
         self.o_gateware_version = Const(GATEWARE_VERSION, 32)
 
         self.event_fifo = SyncFIFOBuffered(width=31, depth=128)
+        self.bus = SNESBus(cart_signals)
 
     def elaborate(self, platform):
         m = Module()
 
+        m.submodules.bus = bus = self.bus
         m.submodules.event_fifo = event_fifo = self.event_fifo
-
-        b = types.SimpleNamespace()
-        # synchronize the quite asynchronous SNES bus signals to our domain.
-        # this seems to work okay, but the main sd2snes uses more sophisticated
-        # techniques to determine the bus state and we may have to steal some.
-        for name in dir(self):
-            if not name.startswith("i_snes_"): continue
-            var = getattr(self, name)
-            sync_var = Signal(len(var))
-            m.submodules["ffsync_"+name] = FFSynchronizer(var, sync_var)
-            setattr(b, name[len("i_snes_"):], sync_var)
-
-        # keep track of the SNES clock cycle so we can time our events. the 29
-        # bit counter will overflow every ~25 seconds, but there's something
-        # seriously wrong if there aren't any events for a 25 second period. we
-        # need the extra 3 bits for event metadata.
-        snes_cycle_counter = Signal(29)
-        last_clock = Signal()
-        m.d.sync += last_clock.eq(b.clock)
-        with m.If(~last_clock & b.clock):
-            m.d.sync += snes_cycle_counter.eq(snes_cycle_counter + 1)
-
-        # for now we are just concerned with tracing execution. there's no
-        # execute signal on the bus, so we just look for the start of a read
-        # instead. we assume the address is valid at that point but tbh we're
-        # not 100% sure.
-        last_rd = Signal()
-        snes_read_started = Signal()
-        m.d.sync += last_rd.eq(b.rd)
-        m.d.comb += snes_read_started.eq(last_rd & ~b.rd)
 
         # buffer the matcher input signals to ensure the best timing
         mb_addr = Signal(24)
-        mb_snes_read_started = Signal()
+        mb_valid = Signal()
         m.d.sync += [
-            mb_addr.eq(b.addr),
-            mb_snes_read_started.eq(snes_read_started),
+            mb_addr.eq(bus.o_addr),
+            mb_valid.eq(bus.o_valid),
         ]
 
         mb_config_data = Signal(8)
@@ -147,7 +107,7 @@ class ChronoFigureCore(Elaboratable):
             m.submodules["matcher_{}".format(matcher_num)] = matcher
             m.d.comb += [
                 matcher.i_snes_addr.eq(mb_addr),
-                matcher.i_snes_rd.eq(mb_snes_read_started),
+                matcher.i_snes_rd.eq(mb_valid),
 
                 matcher.i_config_data.eq(mb_config_data),
                 matcher.i_config_we.eq(Mux(mb_config_addr == matcher_num,
@@ -187,10 +147,14 @@ class ChronoFigureCore(Elaboratable):
         event_data0 = Signal(30)
         event_data1 = Signal(30)
 
+        snes_cycle_counter = Signal(29)
+        counter_offs = Signal(29)
+        m.d.comb += snes_cycle_counter.eq(bus.o_cycle_count[:29]-counter_offs)
+
         with m.Switch(matched_type):
             with m.Case(MATCH_TYPE_RESET):
                 m.d.sync += [
-                    snes_cycle_counter.eq(0),
+                    counter_offs.eq(bus.o_cycle_count[:29]),
                     currently_waiting.eq(0),
                     # first event after reset is 0, then 1, 2, 3, 1, 2, 3, etc.
                     event_counter.eq(0),

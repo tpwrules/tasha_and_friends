@@ -2,22 +2,13 @@ from nmigen import *
 from nmigen.back import verilog
 
 from .core import ChronoFigureCore
+from .snes_bus import make_cart_signals
 
 # create the topmost module. it's responsible for setting up the clock.
 class Top(Elaboratable):
     def __init__(self):
         # main system clock
         self.i_clock = Signal()
-
-        # the snes bus inputs
-        self.i_snes_addr = Signal(24)
-        self.i_snes_periph_addr = Signal(8)
-        self.i_snes_rd = Signal()
-        self.i_snes_wr = Signal()
-        self.i_snes_pard = Signal()
-        self.i_snes_pawr = Signal()
-        self.i_snes_clock = Signal()
-        self.i_snes_reset = Signal() # pulses high right after reset ends
 
         self.i_config = Signal(32) # configuration word
         self.i_config_addr = Signal(8) # which matcher to apply it to
@@ -31,7 +22,13 @@ class Top(Elaboratable):
         # version constant output for the get version command
         self.o_gateware_version = Signal(32)
 
-        self.cfcore = ChronoFigureCore()
+        self.cart_signals = make_cart_signals()
+        # expose cart signal named signals to the outside world
+        for fi, field in enumerate(self.cart_signals._fields):
+            s = Signal(len(self.cart_signals[fi]), name="i_snes_"+field)
+            setattr(self, "i_snes_"+field, s)
+
+        self.cfcore = ChronoFigureCore(self.cart_signals)
 
     def elaborate(self, platform):
         m = Module()
@@ -42,9 +39,12 @@ class Top(Elaboratable):
 
         m.submodules.cfcore = cfcore = self.cfcore
 
+        # hook up the exposed cart signals
+        for fi, field in enumerate(self.cart_signals._fields):
+            m.d.comb += self.cart_signals[fi].eq(getattr(self, "i_snes_"+field))
         # everything else just gets passed straight through
         for var in dir(self):
-            if var == "i_clock": continue
+            if var == "i_clock" or var.startswith("i_snes_"): continue
             if var.startswith("i_"):
                 m.d.comb += getattr(cfcore, var).eq(getattr(self, var))
             elif var.startswith("o_"):
