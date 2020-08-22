@@ -1,4 +1,5 @@
 from nmigen import *
+from nmigen.lib.fifo import SyncFIFOBuffered
 
 # all the MATCH_ constants (and NUM_MATCHERS + MATCHER_BITS)
 from .match_info import *
@@ -38,9 +39,14 @@ class MatchEngine(Elaboratable):
 
         self.o_match_info = make_match_info()
         self.o_match_valid = Signal()
+        self.i_match_re = Signal()
+
+        self.match_fifo = SyncFIFOBuffered(width=72, depth=256)
 
     def elaborate(self, platform):
         m = Module()
+
+        m.submodules.match_fifo = match_fifo = self.match_fifo
 
         # convert 32 bit config word into four 8 bit writes
         mb_config_data = Signal(8)
@@ -70,16 +76,13 @@ class MatchEngine(Elaboratable):
 
         # buffer the matcher input signals to ensure the best timing
         mb_addr = Signal(24)
+        mb_data = Signal(8)
         mb_valid = Signal()
         m.d.sync += mb_valid.eq(self.i_bus_valid)
         with m.If(self.i_bus_valid):
             m.d.sync += [
                 mb_addr.eq(self.i_bus_addr),
-                # there should be enough timing leeway that there won't be
-                # another bus transaction before the match is finished
-                # processing? maybe?
-                self.o_match_info.addr.eq(self.i_bus_addr),
-                self.o_match_info.data.eq(self.i_bus_data),
+                mb_data.eq(self.i_bus_data),
             ]
 
         # wire up all the matchers
@@ -115,10 +118,27 @@ class MatchEngine(Elaboratable):
         # the final output. will be 0 if no matchers matched, or the type of
         # that match otherwise.
         matched_type = to_or[0]
+        match_valid = Signal()
+        match_info = make_match_info()
         m.d.comb += [
-            self.o_match_info.match_type.eq(matched_type),
-            self.o_match_info.cycle_count.eq(self.i_cycle_count),
-            self.o_match_valid.eq(matched_type != 0),
+            match_valid.eq(matched_type != 0),
+            match_info.match_type.eq(matched_type),
+            match_info.cycle_count.eq(self.i_cycle_count),
+            # there should be enough timing leeway that there won't be another
+            # bus transaction before the match is finished processing? maybe?
+            match_info.addr.eq(mb_addr),
+            match_info.data.eq(mb_data),
+        ]
+
+        # put the match into a FIFO so it can be processed at the core's leisure
+        assert(len(Cat(*match_info)) <= 72) # ensure it can fit
+        m.d.comb += [
+            match_fifo.w_data.eq(Cat(*match_info)),
+            match_fifo.w_en.eq(match_valid),
+
+            Cat(*self.o_match_info).eq(match_fifo.r_data),
+            self.o_match_valid.eq(match_fifo.r_rdy),
+            match_fifo.r_en.eq(self.i_match_re),
         ]
 
         return m
