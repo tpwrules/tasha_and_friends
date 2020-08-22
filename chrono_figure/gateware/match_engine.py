@@ -10,6 +10,8 @@ from collections import namedtuple
 MatchInfo = namedtuple("MatchInfo", [
     "match_type", # what type of match happened
     "cycle_count", # cycle it happened
+    "addr", # what address was matched
+    "data", # what data was on the bus
 ])
 
 # return a filled out MatchInfo with all the Signal()s inside
@@ -17,6 +19,8 @@ def make_match_info():
     return MatchInfo(
         match_type=Signal(MATCH_TYPE_BITS, name="match_type"),
         cycle_count=Signal(32, name="cycle_count"),
+        addr=Signal(24, name="addr"),
+        data=Signal(8, name="data"),
     )
 
 class MatchEngine(Elaboratable):
@@ -24,6 +28,7 @@ class MatchEngine(Elaboratable):
         # SNES bus signals
         self.i_bus_valid = Signal()
         self.i_bus_addr = Signal(24)
+        self.i_bus_data = Signal(8)
         self.i_cycle_count = Signal(32)
 
         # config bus signals
@@ -68,11 +73,14 @@ class MatchEngine(Elaboratable):
         mb_valid = Signal()
         m.d.sync += mb_valid.eq(self.i_bus_valid)
         with m.If(self.i_bus_valid):
-            m.d.sync += mb_addr.eq(self.i_bus_addr)
-        m.d.sync += [
-            mb_addr.eq(self.i_bus_addr),
-            mb_valid.eq(self.i_bus_valid),
-        ]
+            m.d.sync += [
+                mb_addr.eq(self.i_bus_addr),
+                # there should be enough timing leeway that there won't be
+                # another bus transaction before the match is finished
+                # processing? maybe?
+                self.o_match_info.addr.eq(self.i_bus_addr),
+                self.o_match_info.data.eq(self.i_bus_data),
+            ]
 
         # wire up all the matchers
         matcher_results = []

@@ -9,7 +9,7 @@ from .match_engine import MatchEngine, make_match_info
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1002
+GATEWARE_VERSION = 1003
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -45,6 +45,7 @@ class ChronoFigureCore(Elaboratable):
 
             match_engine.i_bus_valid.eq(bus.o_valid),
             match_engine.i_bus_addr.eq(bus.o_addr),
+            match_engine.i_bus_data.eq(bus.o_data),
             match_engine.i_cycle_count.eq(bus.o_cycle_count),
 
             Cat(*match_info).eq(Cat(*match_engine.o_match_info)),

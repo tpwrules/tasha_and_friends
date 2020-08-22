@@ -49,6 +49,7 @@ class SNESBus(Elaboratable):
         self.o_valid = Signal()
         # for now we can only pick up reads so there's no access type data
         self.o_addr = Signal(24)
+        self.o_data = Signal(8)
 
         # number of SNES master clock cycles since the sd2snes was powered on
         self.o_cycle_count = Signal(32)
@@ -87,6 +88,7 @@ class SNESBus(Elaboratable):
         m.d.comb += [
             self.o_valid.eq(snes_read_started),
             self.o_addr.eq(cart.addr),
+            self.o_data.eq(cart.data),
         ]
 
         return m
