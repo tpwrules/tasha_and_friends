@@ -29,9 +29,9 @@ class ProgramControl(Elaboratable):
         stopping = Signal()
         # stop the processor if we branch to address 0
         m.d.comb += stopping.eq(self.i_branch & (self.i_branch_target == 0))
-        # if the processor is stopped (or a stop is requested), we force it to
-        # branch to address 0 over and over and so stay stopped
-        m.d.comb += self.o_branch_0.eq(stopping | self.i_ctl_stop)
+        # if a stop is requested, we force the processor to branch to address 0
+        # and so trigger a stop itself
+        m.d.comb += self.o_branch_0.eq(self.i_ctl_stop)
 
         curr_pc = Signal(PC_WIDTH)
         stopped = Signal()
@@ -41,10 +41,7 @@ class ProgramControl(Elaboratable):
         # are we being asked to start?
         with m.If(stopping & self.i_ctl_start):
             # yes, set the PC to the new value and start again
-            m.d.comb += [
-                self.o_branch_0.eq(0),
-                self.o_prg_addr.eq(self.i_ctl_pc),
-            ]
+            m.d.comb += self.o_prg_addr.eq(self.i_ctl_pc)
             m.d.sync += [
                 stopped.eq(0),
                 curr_pc.eq(self.i_ctl_pc+1),
