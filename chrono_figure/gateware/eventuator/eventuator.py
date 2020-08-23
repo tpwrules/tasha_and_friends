@@ -42,7 +42,7 @@ class Eventuator(Elaboratable):
 
         # event data fifo signals
         self.o_event = Signal(31)
-        self.o_event_valid = Signal()
+        self.o_event_we = Signal()
         self.i_event_space = Signal() # space for more valid events
 
         self.core = EventuatorCore()
