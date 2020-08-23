@@ -21,11 +21,12 @@ class BasicSimTest:
         self.tb = SimTop()
         self.ev = self.tb.ev
 
-    def simulate(self, name, proc, traces=[]):
+    def simulate(self, name, procs, traces=[]):
         sim = Simulator(self.tb)
         sim.add_clock(1/96e6, domain="sync")
 
-        sim.add_sync_process(proc, domain="sync")
+        for proc in procs:
+            sim.add_sync_process(proc, domain="sync")
 
         with sim.write_vcd(name+".vcd", name+".gtkw",
                 traces=[ClockDomain("sync").clk, *traces]):
@@ -36,7 +37,7 @@ class BasicSimTest:
             yield self.tb.prg_mem[addr+1].eq(int(insn))
 
     # run a cycle based test
-    def do_cycle_test(self, name, prg, sets, chks, vals):
+    def do_cycle_test(self, name, prg, sets, chks, vals, *xprocs):
         # add all the used values as pre-selected traces
         traces = [*sets.values(), *chks.values()]
 
@@ -57,7 +58,7 @@ class BasicSimTest:
                 yield # wait for next cycle and do it again
                 cycle += 1
 
-        self.simulate(name, proc, traces)
+        self.simulate(name, [proc, *xprocs], traces)
         # make sure everything went okay
         for got, expected, msg in to_assert:
             self.assertEqual(got, expected, msg)
