@@ -1,23 +1,16 @@
-from nmigen import *
-from nmigen.sim.pysim import Delay, Settle
+# test basic operation of the core to ensure that it generates the correct
+# control signals for all the instructions. does not check the actual data
+# processing of the instructions themselves.
 
-from .test import *
+from nmigen import *
+
+from .test import SimCoreTest, cycle_test
+from .top import SimTop
 from ..instructions import *
 
 import unittest
 
-class TestCore(BasicSimTest, unittest.TestCase):
-    def proc_start(self):
-        # process to start the program running
-        yield # program is loading during this cycle
-        # assert start and set the start PC to 1
-        yield self.ev.i_ctl_start.eq(1)
-        yield self.ev.i_ctl_pc.eq(1)
-        # deassert start the next cycle
-        yield
-        yield self.ev.i_ctl_start.eq(0)
-
-
+class TestCore(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_BRANCH(self):
         prg = [
@@ -28,7 +21,7 @@ class TestCore(BasicSimTest, unittest.TestCase):
             BRANCH(4),
         ]
         sets = {}
-        chks = {"pc": self.ev.o_prg_addr}
+        chks = {"pc": self.core.o_prg_addr}
         vals = [
             # make sure all the branches get followed
             ({}, {"pc": 1}),
@@ -43,7 +36,7 @@ class TestCore(BasicSimTest, unittest.TestCase):
             # and so on
         ]
 
-        return prg, sets, chks, vals, self.proc_start
+        return sets, chks, vals, self.proc_start_prg(prg)
 
     @cycle_test
     def test_COPY_to_spl(self):
@@ -53,12 +46,12 @@ class TestCore(BasicSimTest, unittest.TestCase):
             COPY(Special.TEST, 3),
         ]
         sets = {}
-        chks = {"saddr": self.ev.core.o_spl_addr,
-                "sre": self.ev.core.o_spl_re,
-                "swe": self.ev.core.o_spl_we,
-                "rraddr": self.ev.core.o_reg_raddr,
-                "rre": self.ev.core.o_reg_re,
-                "rwe": self.ev.core.o_reg_we}
+        chks = {"saddr": self.core.o_spl_addr,
+                "sre": self.core.o_spl_re,
+                "swe": self.core.o_spl_we,
+                "rraddr": self.core.o_reg_raddr,
+                "rre": self.core.o_reg_re,
+                "rwe": self.core.o_reg_we}
         vals = [
             # program is starting
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
@@ -78,7 +71,7 @@ class TestCore(BasicSimTest, unittest.TestCase):
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
         ]
 
-        return prg, sets, chks, vals, self.proc_start
+        return sets, chks, vals, self.proc_start_prg(prg)
 
     @cycle_test
     def test_COPY_from_spl(self):
@@ -88,12 +81,12 @@ class TestCore(BasicSimTest, unittest.TestCase):
             COPY(3, Special.TEST),
         ]
         sets = {}
-        chks = {"saddr": self.ev.core.o_spl_addr,
-                "sre": self.ev.core.o_spl_re,
-                "swe": self.ev.core.o_spl_we,
-                "rwaddr": self.ev.core.o_reg_waddr,
-                "rre": self.ev.core.o_reg_re,
-                "rwe": self.ev.core.o_reg_we}
+        chks = {"saddr": self.core.o_spl_addr,
+                "sre": self.core.o_spl_re,
+                "swe": self.core.o_spl_we,
+                "rwaddr": self.core.o_reg_waddr,
+                "rre": self.core.o_reg_re,
+                "rwe": self.core.o_reg_we}
         vals = [
             # program is starting
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
@@ -114,7 +107,7 @@ class TestCore(BasicSimTest, unittest.TestCase):
                                   "rre": 0, "rwe": 0}),
         ]
 
-        return prg, sets, chks, vals, self.proc_start
+        return sets, chks, vals, self.proc_start_prg(prg)
 
     @cycle_test
     def test_POKE(self):
@@ -124,9 +117,9 @@ class TestCore(BasicSimTest, unittest.TestCase):
             POKE(Special.TEST, 27),
         ]
         sets = {}
-        chks = {"saddr": self.ev.core.o_spl_addr,
-                "sdata": self.ev.core.o_spl_data,
-                "swe": self.ev.core.o_spl_we}
+        chks = {"saddr": self.core.o_spl_addr,
+                "sdata": self.core.o_spl_data,
+                "swe": self.core.o_spl_we}
         vals = [
             # program is starting
             ({}, {"swe": 0}),
@@ -142,7 +135,7 @@ class TestCore(BasicSimTest, unittest.TestCase):
             ({}, {"swe": 0}),
         ]
 
-        return prg, sets, chks, vals, self.proc_start
+        return sets, chks, vals, self.proc_start_prg(prg)
 
     @cycle_test
     def test_MODIFY(self):
@@ -151,14 +144,14 @@ class TestCore(BasicSimTest, unittest.TestCase):
             MODIFY(Mod.COPY, 2),
             MODIFY(Mod.COPY, 3),
         ]
-        sets = {"s": self.ev.i_ctl_start,
-                "spc": self.ev.i_ctl_pc}
-        chks = {"rraddr": self.ev.core.o_reg_raddr,
-                "rwaddr": self.ev.core.o_reg_waddr,
-                "rre": self.ev.core.o_reg_re,
-                "rwe": self.ev.core.o_reg_we,
-                "mod": self.ev.core.o_mod,
-                "type": self.ev.core.o_mod_type}
+        sets = {"s": self.core.i_ctl_start,
+                "spc": self.core.i_ctl_pc}
+        chks = {"rraddr": self.core.o_reg_raddr,
+                "rwaddr": self.core.o_reg_waddr,
+                "rre": self.core.o_reg_re,
+                "rwe": self.core.o_reg_we,
+                "mod": self.core.o_mod,
+                "type": self.core.o_mod_type}
         vals = [
             # program is starting
             ({}, {"rre": 0, "rwe": 0, "mod": 0}),
@@ -178,7 +171,7 @@ class TestCore(BasicSimTest, unittest.TestCase):
             ({}, {"rre": 0, "rwe": 0, "mod": 0}),
         ]
 
-        return prg, sets, chks, vals, self.proc_start
+        return sets, chks, vals, self.proc_start_prg(prg)
 
 if __name__ == "__main__":
     unittest.main()

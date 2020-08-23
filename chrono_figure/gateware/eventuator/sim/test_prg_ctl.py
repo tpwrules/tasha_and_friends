@@ -1,12 +1,14 @@
-from nmigen import *
-from nmigen.sim.pysim import Delay, Settle
+# test basic operation of the Program Control unit to ensure that execution can
+# be started and stopped correctly.
 
-from .test import *
+from nmigen import *
+
+from .test import SimCoreTest, cycle_test
 from ..instructions import *
 
 import unittest
 
-class TestProgramControl(BasicSimTest, unittest.TestCase):
+class TestProgramControl(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_start(self):
         prg = [
@@ -15,10 +17,10 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             POKE(Special.TEST, 3),
             POKE(Special.TEST, 4),
         ]
-        sets = {"ctl_start": self.ev.i_ctl_start,
-                "ctl_pc": self.ev.i_ctl_pc,}
-        chks = {"pc": self.ev.o_prg_addr,
-                "ctl_run": self.ev.o_ctl_run}
+        sets = {"ctl_start": self.core.i_ctl_start,
+                "ctl_pc": self.core.i_ctl_pc,}
+        chks = {"pc": self.core.o_prg_addr,
+                "ctl_run": self.core.o_ctl_run}
         vals = [
             # we start off stopped so the PC should not be incrementing
             ({},                            {"pc": 0, "ctl_run": 0}),
@@ -32,7 +34,7 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             ({},                            {"pc": 4, "ctl_run": 1}),
         ]
 
-        return prg, sets, chks, vals
+        return sets, chks, vals, self.proc_load_prg(prg)
 
     @cycle_test
     def test_stop_asserted(self):
@@ -44,11 +46,11 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             POKE(Special.TEST, 5),
             POKE(Special.TEST, 6),
         ]
-        sets = {"ctl_start": self.ev.i_ctl_start,
-                "ctl_pc": self.ev.i_ctl_pc,
-                "ctl_stop": self.ev.i_ctl_stop}
-        chks = {"pc": self.ev.o_prg_addr,
-                "ctl_run": self.ev.o_ctl_run}
+        sets = {"ctl_start": self.core.i_ctl_start,
+                "ctl_pc": self.core.i_ctl_pc,
+                "ctl_stop": self.core.i_ctl_stop}
+        chks = {"pc": self.core.o_prg_addr,
+                "ctl_run": self.core.o_ctl_run}
         vals = [
             ({},                            {"pc": 0, "ctl_run": 0}),
             # start the program off
@@ -66,7 +68,7 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             ({},                            {"pc": 0, "ctl_run": 0}),
         ]
 
-        return prg, sets, chks, vals
+        return sets, chks, vals, self.proc_load_prg(prg)
 
     @cycle_test
     def test_stop_auto(self):
@@ -77,10 +79,10 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             POKE(Special.TEST, 4),
             BRANCH(0),
         ]
-        sets = {"ctl_start": self.ev.i_ctl_start,
-                "ctl_pc": self.ev.i_ctl_pc}
-        chks = {"pc": self.ev.o_prg_addr,
-                "ctl_run": self.ev.o_ctl_run}
+        sets = {"ctl_start": self.core.i_ctl_start,
+                "ctl_pc": self.core.i_ctl_pc}
+        chks = {"pc": self.core.o_prg_addr,
+                "ctl_run": self.core.o_ctl_run}
         vals = [
             ({},                            {"pc": 0, "ctl_run": 0}),
             # start the program off
@@ -96,7 +98,7 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             ({},                            {"pc": 0, "ctl_run": 0}),
         ]
 
-        return prg, sets, chks, vals
+        return sets, chks, vals, self.proc_load_prg(prg)
 
     @cycle_test
     def test_start_early(self):
@@ -107,10 +109,10 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             POKE(Special.TEST, 4),
             BRANCH(0),
         ]
-        sets = {"ctl_start": self.ev.i_ctl_start,
-                "ctl_pc": self.ev.i_ctl_pc}
-        chks = {"pc": self.ev.o_prg_addr,
-                "ctl_run": self.ev.o_ctl_run}
+        sets = {"ctl_start": self.core.i_ctl_start,
+                "ctl_pc": self.core.i_ctl_pc}
+        chks = {"pc": self.core.o_prg_addr,
+                "ctl_run": self.core.o_ctl_run}
         vals = [
             ({},                            {"pc": 0, "ctl_run": 0}),
             ({"ctl_start": 1, "ctl_pc": 1}, {"pc": 1, "ctl_run": 0}),
@@ -124,7 +126,7 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             ({},                            {"pc": 0, "ctl_run": 0}),
         ]
 
-        return prg, sets, chks, vals
+        return sets, chks, vals, self.proc_load_prg(prg)
 
     @cycle_test
     def test_stop_start(self):
@@ -135,10 +137,10 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             POKE(Special.TEST, 4),
             BRANCH(0),
         ]
-        sets = {"ctl_start": self.ev.i_ctl_start,
-                "ctl_pc": self.ev.i_ctl_pc}
-        chks = {"pc": self.ev.o_prg_addr,
-                "ctl_run": self.ev.o_ctl_run}
+        sets = {"ctl_start": self.core.i_ctl_start,
+                "ctl_pc": self.core.i_ctl_pc}
+        chks = {"pc": self.core.o_prg_addr,
+                "ctl_run": self.core.o_ctl_run}
         vals = [
             ({},                            {"pc": 0, "ctl_run": 0}),
             ({"ctl_start": 1, "ctl_pc": 1}, {"pc": 1, "ctl_run": 0}),
@@ -153,7 +155,7 @@ class TestProgramControl(BasicSimTest, unittest.TestCase):
             ({},                            {"pc": 3, "ctl_run": 1}),
         ]
 
-        return prg, sets, chks, vals
+        return sets, chks, vals, self.proc_load_prg(prg)
 
 if __name__ == "__main__":
     unittest.main()

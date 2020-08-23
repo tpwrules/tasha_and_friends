@@ -2,23 +2,62 @@ from nmigen import *
 from nmigen.lib.fifo import SyncFIFOBuffered
 from nmigen.sim.pysim import Simulator, Delay
 
-from ..eventuator import Eventuator
+from ..core import EventuatorCore
 from .. import widths
-from ...match_info import *
-from ...match_engine import make_match_info
 from ..widths import *
 from ..instructions import *
 
+# simulate just the eventuation core
+class SimCoreTop(Elaboratable):
+    def __init__(self, prg_d=1024, reg_d=256):
+        self.core = EventuatorCore()
+        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d,
+            init=[int(BRANCH(0))])
+        self.reg_mem = Memory(width=widths.DATA_WIDTH, depth=reg_d)
+
+        self.o_clk = Signal()
+
+    def elaborate(self, platform):
+        m = Module()
+
+        m.submodules.core = core = self.core
+        m.submodules.ev_prg_rd = ev_prg_rd = self.prg_mem.read_port(
+            transparent=False)
+        m.submodules.ev_prg_wr = ev_prg_wr = self.prg_mem.write_port()
+        m.submodules.ev_reg_rd = ev_reg_rd = self.reg_mem.read_port(
+            transparent=False)
+        m.submodules.ev_reg_wr = ev_reg_wr = self.reg_mem.write_port()
+
+        # hook the eventuator's memories to it
+        m.d.comb += [
+            ev_prg_rd.addr.eq(core.o_prg_addr),
+            ev_prg_rd.en.eq(1),
+            core.i_prg_data.eq(ev_prg_rd.data),
+
+            ev_reg_rd.addr.eq(core.o_reg_raddr),
+            ev_reg_rd.en.eq(core.o_reg_re),
+            core.i_reg_rdata.eq(ev_reg_rd.data),
+
+            ev_reg_wr.addr.eq(core.o_reg_waddr),
+            ev_reg_wr.en.eq(core.o_reg_we),
+            ev_reg_wr.data.eq(core.o_reg_wdata),
+        ]
+
+        m.d.comb += self.o_clk.eq(ClockSignal())
+
+        return m
+
+# simulate the whole eventuation system
 class SimTop(Elaboratable):
-    def __init__(self, match_depth=256, event_depth=128):
-        self.match_fifo = SyncFIFOBuffered(width=72, depth=match_depth)
-        self.event_fifo = SyncFIFOBuffered(width=31, depth=event_depth)
+    def __init__(self, match_d=256, event_d=128, prg_d=1024, reg_d=256):
+        # smaller depths simulate faster
+        self.match_fifo = SyncFIFOBuffered(width=72, depth=match_d)
+        self.event_fifo = SyncFIFOBuffered(width=31, depth=event_d)
 
         self.ev = Eventuator()
-        self.prg_mem = Memory(
-            width=widths.INSN_WIDTH, depth=1024, init=[int(BRANCH(0))])
-        self.reg_mem = Memory(
-            width=widths.DATA_WIDTH, depth=256)
+        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d,
+            init=[int(BRANCH(0))])
+        self.reg_mem = Memory(width=widths.DATA_WIDTH, depth=reg_d)
 
         # write match into fifo
         self.i_match_info = make_match_info()
@@ -29,6 +68,8 @@ class SimTop(Elaboratable):
         self.o_event = Signal(31)
         self.o_event_valid = Signal()
         self.i_event_re = Signal()
+
+        self.o_clk = Signal()
 
     def elaborate(self, platform):
         m = Module()
@@ -77,5 +118,7 @@ class SimTop(Elaboratable):
             self.o_event_valid.eq(event_fifo.r_rdy),
             event_fifo.r_en.eq(self.i_event_re),
         ]
+
+        m.d.comb += self.o_clk.eq(ClockSignal())
 
         return m
