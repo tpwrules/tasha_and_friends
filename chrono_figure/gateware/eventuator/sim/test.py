@@ -64,11 +64,9 @@ class BasicSimTest:
             self.assertEqual(got, expected, msg)
 
 if __name__ == "__main__":
-    import sys
-    import pathlib
+    import unittest
+    # import and run all the tests
+    from .test_prg_ctl import TestProgramControl
+    from .test_core import TestCore
 
-    st = SimTop()
-    vcd_path = pathlib.Path(sys.argv[1])
-    vcd_dir = vcd_path.parent.resolve(strict=True)
-    vcd_path = vcd_dir/vcd_path.name
-    st.simulate(vcd_path)
+    unittest.main()
