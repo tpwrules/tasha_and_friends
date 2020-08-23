@@ -139,7 +139,7 @@ class EventuatorCore(Elaboratable):
         fetch_spl = fetch_insn[8:15]
         exec_spl = exec_insn[8:15]
         # modification type for MODIFY
-        exec_mod = fetch_insn[8:16]
+        exec_mod = exec_insn[8:16]
 
         # fixed purpose instruction fields
         m.d.comb += [
