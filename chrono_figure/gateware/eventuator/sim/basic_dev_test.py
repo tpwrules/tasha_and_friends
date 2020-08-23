@@ -20,6 +20,7 @@ class SimTop:
             POKE(Special.TEST, -5),
 
             COPY(5, Special.TEST),
+            MODIFY(Mod.COPY, 5),
             COPY(Special.TEST, 5),
 
             BRANCH(0),
@@ -95,11 +96,11 @@ class SimTop:
             yield sim_ctl_pc.eq(1)
             yield
             yield sim_ctl_start.eq(0)
-            for x in range(6): yield
+            for x in range(7): yield
             yield sim_ctl_start.eq(1)
             yield
             yield sim_ctl_start.eq(0)
-            for x in range(4): yield
+            for x in range(5): yield
             yield sim_ctl_start.eq(1)
             yield
             yield sim_ctl_start.eq(0)

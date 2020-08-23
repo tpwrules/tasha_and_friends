@@ -81,4 +81,8 @@ class Eventuator(Elaboratable):
         with m.If(core.o_spl_we & is_spl_addr):
             m.d.sync += spl_reg.eq(core.o_spl_data)
 
+        # test modify functionality
+        with m.If(core.o_mod_type == Mod.COPY):
+            m.d.comb += core.i_mod_data.eq(core.o_mod_data)
+
         return m

@@ -92,6 +92,12 @@ class EventuatorCore(Elaboratable):
         self.o_spl_we = Signal()
         self.o_spl_data = Signal(DATA_WIDTH)
 
+        # modification signals
+        self.o_mod = Signal() # enable modification
+        self.o_mod_type = Signal(8)
+        self.o_mod_data = Signal(DATA_WIDTH) # data to be modified
+        self.i_mod_data = Signal(DATA_WIDTH) # modified data returned
+
         self.prg_ctl = ProgramControl()
 
     def elaborate(self, platform):
@@ -143,6 +149,8 @@ class EventuatorCore(Elaboratable):
             prg_ctl.i_branch_target.eq(fetch_target),
             self.o_reg_raddr.eq(fetch_reg),
             self.o_reg_waddr.eq(exec_reg),
+            self.o_mod_type.eq(exec_mod),
+            self.o_mod_data.eq(self.i_reg_rdata),
         ]
 
         # decoding of fetched instruction. this just sets up the reads of memory
@@ -169,7 +177,7 @@ class EventuatorCore(Elaboratable):
                 pass # all the action is on the execute cycle
 
             with m.Case(InsnCode.MODIFY):
-                pass # not yet implemented
+                m.d.comb += self.o_reg_re.eq(1)
 
         # execution of instruction. does the thing with the read memory value
         with m.Switch(exec_insn[16:]):
@@ -197,6 +205,10 @@ class EventuatorCore(Elaboratable):
                 ]
 
             with m.Case(InsnCode.MODIFY):
-                pass # not yet implemented
+                m.d.comb += [
+                    self.o_mod.eq(1),
+                    self.o_reg_we.eq(1),
+                    self.o_reg_wdata.eq(self.i_mod_data),
+                ]
 
         return m
