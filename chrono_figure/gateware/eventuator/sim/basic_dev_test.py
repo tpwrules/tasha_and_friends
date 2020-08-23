@@ -6,14 +6,28 @@ from ..eventuator import Eventuator
 from .. import widths
 from ...match_info import *
 from ...match_engine import make_match_info
+from ..widths import *
+from ..instructions import *
 
 class SimTop:
     def __init__(self):
         self.event_fifo = SyncFIFOBuffered(width=31, depth=128)
 
+        prg = [
+            BRANCH(0),
+
+            POKE(Special.TEST, 5),
+            POKE(Special.TEST, -5),
+
+            COPY(5, Special.TEST),
+            COPY(Special.TEST, 5),
+
+            BRANCH(0),
+        ]
+
         self.eventuator = Eventuator()
         self.ev_prg_mem = Memory(
-            width=widths.INSN_WIDTH, depth=1024, init=[0])
+            width=widths.INSN_WIDTH, depth=1024, init=list(int(i) for i in prg))
         self.ev_reg_mem = Memory(
             width=widths.DATA_WIDTH, depth=256)
 
@@ -60,19 +74,40 @@ class SimTop:
             eventuator.i_event_space.eq(event_fifo.w_rdy),
         ]
 
+        sim_ctl_start = Signal()
+        sim_ctl_pc = Signal(PC_WIDTH)
+        sim_ctl_run = Signal()
+        sim_ctl_stop = Signal()
+        
+        m.d.comb += [
+            eventuator.i_ctl_start.eq(sim_ctl_start),
+            eventuator.i_ctl_pc.eq(sim_ctl_pc),
+            sim_ctl_run.eq(eventuator.o_ctl_run),
+            eventuator.i_ctl_stop.eq(sim_ctl_stop),
+        ]
+
         sim = Simulator(m)
         sim.add_clock(1/96e6, domain="sync")
 
         def main_proc():
-            yield sim_match_info.match_type.eq(MATCH_TYPE_RESET)
-            yield sim_match_valid.eq(1)
+            for x in range(5): yield
+            yield sim_ctl_start.eq(1)
+            yield sim_ctl_pc.eq(1)
             yield
-            yield sim_match_valid.eq(0)
-            for x in range(10): yield
-            yield sim_match_info.match_type.eq(MATCH_TYPE_NMI)
-            yield sim_match_valid.eq(1)
+            yield sim_ctl_start.eq(0)
+            for x in range(6): yield
+            yield sim_ctl_start.eq(1)
             yield
-            yield sim_match_valid.eq(0)
+            yield sim_ctl_start.eq(0)
+            for x in range(4): yield
+            yield sim_ctl_start.eq(1)
+            yield
+            yield sim_ctl_start.eq(0)
+            for x in range(2): yield
+            yield sim_ctl_stop.eq(1)
+            yield
+            yield sim_ctl_stop.eq(0)
+            yield
 
         sim.add_sync_process(main_proc, domain="sync")
 

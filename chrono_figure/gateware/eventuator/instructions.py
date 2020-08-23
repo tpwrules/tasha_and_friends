@@ -9,7 +9,7 @@ class InsnCode(IntEnum):
     MODIFY = 3
 
 class Condition(IntEnum):
-    ALWAYS = 1
+    ALWAYS = 0
 
 class Special(IntEnum):
     TEST = 1
@@ -123,7 +123,7 @@ if __name__ == "__main__":
             raise AssertionError("expected {} but got {}".format(expected, got))
     print("Testing basic instruction encoding")
     i = BRANCH(69)
-    ass(hex(int(i)), "0x1045")
+    ass(hex(int(i)), "0x45")
     ass(str(i), "BRANCH(69, Condition.ALWAYS)")
 
     i = COPY(Special.TEST, 69)
