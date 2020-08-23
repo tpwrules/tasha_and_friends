@@ -84,14 +84,14 @@ class POKE:
         self.special = special
 
         val = int(val)
-        if val < -256 or val > 255:
+        if val < -256 or val > 511:
             raise ValueError("val {} out of range".format(val))
         self.val = val
 
         self.code = InsnCode.POKE
 
     def __int__(self):
-        return (int(InsnCode.POKE << 16) + ((self.val < 0) << 15)
+        return (int(InsnCode.POKE << 16) + ((self.val & 0x100) << 7)
             + (self.special << 8) + (self.val & 0xFF))
 
     def __str__(self):
@@ -139,6 +139,9 @@ if __name__ == "__main__":
     i = POKE(Special.TEST, -69)
     ass(hex(int(i)), "0x281bb")
     ass(str(i), "POKE(Special.TEST, -69)")
+    i = POKE(Special.TEST, 269)
+    ass(hex(int(i)), "0x2810d")
+    ass(str(i), "POKE(Special.TEST, 269)")
 
     i = MODIFY(Mod.COPY, 69)
     ass(hex(int(i)), "0x30145")
