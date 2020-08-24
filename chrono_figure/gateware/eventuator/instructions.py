@@ -122,6 +122,10 @@ if __name__ == "__main__":
         if got != expected:
             raise AssertionError("expected {} but got {}".format(expected, got))
     print("Testing basic instruction encoding")
+    i = BRANCH(0) # MUST BE ENCODED AS 0
+    ass(hex(int(i)), "0x0")
+    ass(str(i), "BRANCH(0, Condition.ALWAYS)")
+
     i = BRANCH(69)
     ass(hex(int(i)), "0x45")
     ass(str(i), "BRANCH(69, Condition.ALWAYS)")

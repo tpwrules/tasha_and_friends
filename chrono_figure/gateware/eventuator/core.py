@@ -119,8 +119,7 @@ class EventuatorCore(Elaboratable):
         # instruction being executed and completed
         exec_insn = Signal(INSN_WIDTH)
         m.d.sync += exec_insn.eq(fetch_insn)
-        m.d.comb += fetch_insn.eq(
-            Mux(force_branch_0, int(BRANCH(0)), self.i_prg_data))
+        m.d.comb += fetch_insn.eq(Mux(force_branch_0, 0, self.i_prg_data))
 
         # instruction field selection
         # branch target for BRANCH

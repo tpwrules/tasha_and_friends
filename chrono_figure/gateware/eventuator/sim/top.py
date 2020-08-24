@@ -11,8 +11,7 @@ from ..instructions import *
 class SimCoreTop(Elaboratable):
     def __init__(self, prg_d=1024, reg_d=256):
         self.core = EventuatorCore()
-        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d,
-            init=[int(BRANCH(0))])
+        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d, init=[0])
         self.reg_mem = Memory(width=widths.DATA_WIDTH, depth=reg_d)
 
         self.o_clk = Signal()
@@ -55,8 +54,7 @@ class SimTop(Elaboratable):
         self.event_fifo = SyncFIFOBuffered(width=31, depth=event_d)
 
         self.ev = Eventuator()
-        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d,
-            init=[int(BRANCH(0))])
+        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d, init=[0])
         self.reg_mem = Memory(width=widths.DATA_WIDTH, depth=reg_d)
 
         # write match into fifo
