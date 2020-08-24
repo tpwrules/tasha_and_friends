@@ -8,8 +8,9 @@ class InsnCode(IntEnum):
     POKE = 2
     MODIFY = 3
 
-class Condition(IntEnum):
+class Cond(IntEnum):
     ALWAYS = 0
+    NEVER = 15
 
 class SplR(IntEnum):
     TMPA = 0
@@ -24,22 +25,22 @@ class Mod(IntEnum):
 
 # set the PC to the destination if the condition is true
 class BRANCH:
-    def __init__(self, dest, condition=Condition.ALWAYS):
+    def __init__(self, dest, cond=Cond.ALWAYS):
         dest = int(dest)
         if dest < 0 or dest >= 2**PC_WIDTH:
             raise ValueError("dest pc {} out of range".format(dest))
         self.dest = dest
 
-        if not isinstance(condition, Condition):
+        if not isinstance(cond, Cond):
             raise ValueError("invalid condition")
-        self.condition = condition
+        self.cond = cond
 
     def __int__(self):
-        return ((int(InsnCode.BRANCH) << 16) + (int(self.condition) << 12)
+        return ((int(InsnCode.BRANCH) << 16) + (int(self.cond) << 12)
             + self.dest)
 
     def __str__(self):
-        return "BRANCH({}, {})".format(self.dest, str(self.condition))
+        return "BRANCH({}, {})".format(self.dest, str(self.cond))
 
 # copy a special register to a regular register or vice versa
 class COPY:
@@ -133,11 +134,15 @@ if __name__ == "__main__":
     print("Testing basic instruction encoding")
     i = BRANCH(0) # MUST BE ENCODED AS 0
     ass(hex(int(i)), "0x0")
-    ass(str(i), "BRANCH(0, Condition.ALWAYS)")
+    ass(str(i), "BRANCH(0, Cond.ALWAYS)")
 
     i = BRANCH(69)
     ass(hex(int(i)), "0x45")
-    ass(str(i), "BRANCH(69, Condition.ALWAYS)")
+    ass(str(i), "BRANCH(69, Cond.ALWAYS)")
+
+    i = BRANCH(69, Cond.NEVER)
+    ass(hex(int(i)), "0xf045")
+    ass(str(i), "BRANCH(69, Cond.NEVER)")
 
     i = COPY(SplW.TMPA, 69)
     ass(hex(int(i)), "0x18045")

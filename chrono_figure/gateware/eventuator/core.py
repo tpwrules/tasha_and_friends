@@ -158,8 +158,10 @@ class EventuatorCore(Elaboratable):
             with m.Case(InsnCode.BRANCH):
                 should_branch = Signal()
                 with m.Switch(fetch_cond):
-                    with m.Case(Condition.ALWAYS):
+                    with m.Case(Cond.ALWAYS):
                         m.d.comb += should_branch.eq(1)
+                    with m.Case(Cond.NEVER):
+                        m.d.comb += should_branch.eq(0)
 
                 m.d.comb += prg_ctl.i_branch.eq(should_branch)
 

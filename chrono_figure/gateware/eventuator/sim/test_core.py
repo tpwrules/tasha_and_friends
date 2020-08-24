@@ -14,25 +14,27 @@ class TestCore(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_BRANCH_logic(self):
         prg = [
-            BRANCH(5),
+            BRANCH(6),
             BRANCH(1),
+            BRANCH(10, Cond.NEVER),
             BRANCH(2),
-            BRANCH(3),
             BRANCH(4),
+            BRANCH(5),
         ]
         sets = {}
         chks = {"pc": self.core.o_prg_addr}
         vals = [
             # make sure all the branches get followed
             ({}, {"pc": 1}),
+            ({}, {"pc": 6}),
             ({}, {"pc": 5}),
             ({}, {"pc": 4}),
-            ({}, {"pc": 3}),
             ({}, {"pc": 2}),
             ({}, {"pc": 1}),
+            ({}, {"pc": 6}),
             ({}, {"pc": 5}),
             ({}, {"pc": 4}),
-            ({}, {"pc": 3}),
+            ({}, {"pc": 2}),
             # and so on
         ]
 
