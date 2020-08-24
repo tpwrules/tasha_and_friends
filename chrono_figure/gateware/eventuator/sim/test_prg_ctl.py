@@ -12,10 +12,10 @@ class TestProgramControl(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_start(self):
         prg = [
-            POKE(Special.TEST, 1),
-            POKE(Special.TEST, 2),
-            POKE(Special.TEST, 3),
-            POKE(Special.TEST, 4),
+            POKE(SplW.TMPA, 1),
+            POKE(SplW.TMPA, 2),
+            POKE(SplW.TMPA, 3),
+            POKE(SplW.TMPA, 4),
         ]
         sets = {"ctl_start": self.core.i_ctl_start,
                 "ctl_pc": self.core.i_ctl_pc,}
@@ -39,12 +39,12 @@ class TestProgramControl(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_stop_asserted(self):
         prg = [
-            POKE(Special.TEST, 1),
-            POKE(Special.TEST, 2),
-            POKE(Special.TEST, 3),
-            POKE(Special.TEST, 4),
-            POKE(Special.TEST, 5),
-            POKE(Special.TEST, 6),
+            POKE(SplW.TMPA, 1),
+            POKE(SplW.TMPA, 2),
+            POKE(SplW.TMPA, 3),
+            POKE(SplW.TMPA, 4),
+            POKE(SplW.TMPA, 5),
+            POKE(SplW.TMPA, 6),
         ]
         sets = {"ctl_start": self.core.i_ctl_start,
                 "ctl_pc": self.core.i_ctl_pc,
@@ -73,10 +73,10 @@ class TestProgramControl(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_stop_auto(self):
         prg = [
-            POKE(Special.TEST, 1),
-            POKE(Special.TEST, 2),
-            POKE(Special.TEST, 3),
-            POKE(Special.TEST, 4),
+            POKE(SplW.TMPA, 1),
+            POKE(SplW.TMPA, 2),
+            POKE(SplW.TMPA, 3),
+            POKE(SplW.TMPA, 4),
             BRANCH(0),
         ]
         sets = {"ctl_start": self.core.i_ctl_start,
@@ -103,10 +103,10 @@ class TestProgramControl(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_start_early(self):
         prg = [
-            POKE(Special.TEST, 1),
-            POKE(Special.TEST, 2),
-            POKE(Special.TEST, 3),
-            POKE(Special.TEST, 4),
+            POKE(SplW.TMPA, 1),
+            POKE(SplW.TMPA, 2),
+            POKE(SplW.TMPA, 3),
+            POKE(SplW.TMPA, 4),
             BRANCH(0),
         ]
         sets = {"ctl_start": self.core.i_ctl_start,
@@ -131,10 +131,10 @@ class TestProgramControl(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_stop_start(self):
         prg = [
-            POKE(Special.TEST, 1),
-            POKE(Special.TEST, 2),
-            POKE(Special.TEST, 3),
-            POKE(Special.TEST, 4),
+            POKE(SplW.TMPA, 1),
+            POKE(SplW.TMPA, 2),
+            POKE(SplW.TMPA, 3),
+            POKE(SplW.TMPA, 4),
             BRANCH(0),
         ]
         sets = {"ctl_start": self.core.i_ctl_start,

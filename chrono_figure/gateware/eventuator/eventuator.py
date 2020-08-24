@@ -72,14 +72,18 @@ class Eventuator(Elaboratable):
             m.d.comb += core.i_reg_rdata.eq(forward_data)
 
         # test special register functionality
-        spl_reg = Signal(DATA_WIDTH)
-        is_spl_addr = Signal()
-        m.d.comb += [
-            is_spl_addr.eq(core.o_spl_addr == Special.TEST),
-            core.i_spl_data.eq(spl_reg),
-        ]
-        with m.If(core.o_spl_we & is_spl_addr):
-            m.d.sync += spl_reg.eq(core.o_spl_data)
+        spl_tmpa = Signal(DATA_WIDTH)
+        spl_tmpb = Signal(DATA_WIDTH)
+        with m.If(core.o_spl_we):
+            with m.If(core.o_spl_waddr == SplW.TMPA):
+                m.d.sync += spl_tmpa.eq(core.o_spl_wdata)
+            with m.Elif(core.o_spl_waddr == SplW.TMPB):
+                m.d.sync += spl_tmpb.eq(core.o_spl_wdata)
+        with m.If(core.o_spl_re):
+            with m.If(core.o_spl_raddr == SplR.TMPA):
+                m.d.sync += core.i_spl_rdata.eq(spl_tmpa)
+            with m.Elif(core.o_spl_raddr == SplR.TMPB):
+                m.d.sync += core.i_spl_rdata.eq(spl_tmpb)
 
         # test modify functionality
         with m.If(core.o_mod_type == Mod.COPY):

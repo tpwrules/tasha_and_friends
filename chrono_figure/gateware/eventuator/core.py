@@ -82,12 +82,13 @@ class EventuatorCore(Elaboratable):
         self.o_reg_we = Signal()
         self.o_reg_wdata = Signal(DATA_WIDTH)
 
-        # special register access signals
-        self.o_spl_addr = Signal(REGS_WIDTH)
+        # special register access signals (dual port)
+        self.o_spl_raddr = Signal(REGS_WIDTH)
         self.o_spl_re = Signal()
-        self.i_spl_data = Signal(DATA_WIDTH)
+        self.i_spl_rdata = Signal(DATA_WIDTH)
+        self.o_spl_waddr = Signal(REGS_WIDTH)
         self.o_spl_we = Signal()
-        self.o_spl_data = Signal(DATA_WIDTH)
+        self.o_spl_wdata = Signal(DATA_WIDTH)
 
         # modification signals
         self.o_mod = Signal() # enable modification
@@ -145,6 +146,8 @@ class EventuatorCore(Elaboratable):
             prg_ctl.i_branch_target.eq(fetch_target),
             self.o_reg_raddr.eq(fetch_reg),
             self.o_reg_waddr.eq(exec_reg),
+            self.o_spl_raddr.eq(fetch_spl),
+            self.o_spl_waddr.eq(exec_spl),
             self.o_mod_type.eq(exec_mod),
             self.o_mod_data.eq(self.i_reg_rdata),
         ]
@@ -164,10 +167,7 @@ class EventuatorCore(Elaboratable):
                 with m.If(fetch_sel): # regular -> special
                     m.d.comb += self.o_reg_re.eq(1)
                 with m.Else(): # special -> regular
-                    m.d.comb += [
-                        self.o_spl_re.eq(1),
-                        self.o_spl_addr.eq(fetch_spl),
-                    ]
+                    m.d.comb += self.o_spl_re.eq(1),
 
             with m.Case(InsnCode.POKE):
                 pass # all the action is on the execute cycle
@@ -184,20 +184,18 @@ class EventuatorCore(Elaboratable):
                 with m.If(exec_sel): # regular -> special
                     m.d.comb += [
                         self.o_spl_we.eq(1),
-                        self.o_spl_addr.eq(exec_spl),
-                        self.o_spl_data.eq(self.i_reg_rdata),
+                        self.o_spl_wdata.eq(self.i_reg_rdata),
                     ]
                 with m.Else(): # special -> regular
                     m.d.comb += [
                         self.o_reg_we.eq(1),
-                        self.o_reg_wdata.eq(self.i_spl_data),
+                        self.o_reg_wdata.eq(self.i_spl_rdata),
                     ]
 
             with m.Case(InsnCode.POKE):
                 m.d.comb += [
                     self.o_spl_we.eq(1),
-                    self.o_spl_addr.eq(exec_spl),
-                    self.o_spl_data.eq(Cat(exec_val, Repl(exec_sel, 24))),
+                    self.o_spl_wdata.eq(Cat(exec_val, Repl(exec_sel, 24))),
                 ]
 
             with m.Case(InsnCode.MODIFY):

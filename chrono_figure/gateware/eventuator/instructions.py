@@ -11,8 +11,13 @@ class InsnCode(IntEnum):
 class Condition(IntEnum):
     ALWAYS = 0
 
-class Special(IntEnum):
-    TEST = 1
+class SplR(IntEnum):
+    TMPA = 0
+    TMPB = 1
+
+class SplW(IntEnum):
+    TMPA = 0
+    TMPB = 1
 
 class Mod(IntEnum):
     COPY = 1
@@ -39,8 +44,8 @@ class BRANCH:
 # copy a special register to a regular register or vice versa
 class COPY:
     def __init__(self, dest, src):
-        dest_special = isinstance(dest, Special)
-        src_special = isinstance(src, Special)
+        dest_special = isinstance(dest, SplW)
+        src_special = isinstance(src, SplR)
         if dest_special and src_special:
             raise ValueError("can't copy special to special")
         elif not dest_special and not src_special:
@@ -52,12 +57,16 @@ class COPY:
             src = int(src)
             if src < 0 or src >= 2**REGS_WIDTH:
                 raise ValueError("src reg {} out of range".format(src))
+            if isinstance(dest, SplR):
+                raise ValueError("can't write to SplR")
             self.src = src
         else:
             self.dir = 0
             dest = int(dest)
             if dest < 0 or dest >= 2**REGS_WIDTH:
                 raise ValueError("dest reg {} out of range".format(dest))
+            if isinstance(src, SplW):
+                raise ValueError("can't read from SplW")
             self.dest = dest
             self.src = src
 
@@ -79,8 +88,8 @@ class COPY:
 # write a 9-bit sign-extended value to a special register
 class POKE:
     def __init__(self, special, val):
-        if not isinstance(special, Special):
-            raise ValueError("can only poke special")
+        if not isinstance(special, SplW):
+            raise ValueError("can only poke SplW")
         self.special = special
 
         val = int(val)
@@ -130,22 +139,22 @@ if __name__ == "__main__":
     ass(hex(int(i)), "0x45")
     ass(str(i), "BRANCH(69, Condition.ALWAYS)")
 
-    i = COPY(Special.TEST, 69)
-    ass(hex(int(i)), "0x18145")
-    ass(str(i), "COPY(Special.TEST, 69)")
-    i = COPY(69, Special.TEST)
+    i = COPY(SplW.TMPA, 69)
+    ass(hex(int(i)), "0x18045")
+    ass(str(i), "COPY(SplW.TMPA, 69)")
+    i = COPY(69, SplR.TMPB)
     ass(hex(int(i)), "0x10145")
-    ass(str(i), "COPY(69, Special.TEST)")
+    ass(str(i), "COPY(69, SplR.TMPB)")
     
-    i = POKE(Special.TEST, 69)
+    i = POKE(SplW.TMPB, 69)
     ass(hex(int(i)), "0x20145")
-    ass(str(i), "POKE(Special.TEST, 69)")
-    i = POKE(Special.TEST, -69)
+    ass(str(i), "POKE(SplW.TMPB, 69)")
+    i = POKE(SplW.TMPB, -69)
     ass(hex(int(i)), "0x281bb")
-    ass(str(i), "POKE(Special.TEST, -69)")
-    i = POKE(Special.TEST, 269)
-    ass(hex(int(i)), "0x2810d")
-    ass(str(i), "POKE(Special.TEST, 269)")
+    ass(str(i), "POKE(SplW.TMPB, -69)")
+    i = POKE(SplW.TMPA, 269)
+    ass(hex(int(i)), "0x2800d")
+    ass(str(i), "POKE(SplW.TMPA, 269)")
 
     i = MODIFY(Mod.COPY, 69)
     ass(hex(int(i)), "0x30145")
