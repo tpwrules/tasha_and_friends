@@ -85,6 +85,22 @@ class TestExecution(SimTest, unittest.TestCase):
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
+    
+    @cycle_test
+    def test_spl_tmp_store_to_load(self):
+        prg = [
+            POKE(SplW.TMPA, 1), # write something to the temporary register
+            COPY(3, SplR.TMPA), # did we get back what we just wrote?
+        ]
+        sets = {}
+        chks = {"r3": self.tb.reg_mem[3]}
+        vals = [
+            *[({}, {})]*4,
+            ({}, {"r3": 1}),
+            ({}, {"r3": 1}),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
 
     @cycle_test
     def test_reg_store_to_load(self):
@@ -94,7 +110,6 @@ class TestExecution(SimTest, unittest.TestCase):
             COPY(3, SplR.TMPA), #  already checked works
             COPY(3, SplR.TMPB),
             COPY(SplW.TMPA, 3), # read the register we just wrote
-            POKE(SplW.TMPB, 6),
             COPY(4, SplR.TMPA), # did we get that back?
         ]
         sets = {}
@@ -102,7 +117,6 @@ class TestExecution(SimTest, unittest.TestCase):
         vals = [
             *[({}, {})]*5,
             ({}, {"r3": 1}),
-            ({}, {"r3": 2}),
             ({}, {"r3": 2}),
             ({}, {"r3": 2}),
             ({}, {"r3": 2, "r4": 2}),

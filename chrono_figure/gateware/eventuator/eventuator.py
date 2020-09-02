@@ -4,6 +4,7 @@ from ..match_info import *
 from .widths import *
 from ..match_engine import make_match_info
 from .core import EventuatorCore
+from .special import *
 from .instructions import *
 
 class Eventuator(Elaboratable):
@@ -46,6 +47,7 @@ class Eventuator(Elaboratable):
         self.i_event_space = Signal() # space for more valid events
 
         self.core = EventuatorCore()
+        self.spl_temp = TemporaryUnit()
 
     def elaborate(self, platform):
         m = Module()
@@ -59,19 +61,16 @@ class Eventuator(Elaboratable):
             elif name.startswith("o_"):
                 m.d.comb += getattr(self, name).eq(getattr(core, name))
 
-        # test special register functionality
-        spl_tmpa = Signal(DATA_WIDTH)
-        spl_tmpb = Signal(DATA_WIDTH)
-        with m.If(core.o_spl_we):
-            with m.If(core.o_spl_waddr == SplW.TMPA):
-                m.d.sync += spl_tmpa.eq(core.o_spl_wdata)
-            with m.Elif(core.o_spl_waddr == SplW.TMPB):
-                m.d.sync += spl_tmpb.eq(core.o_spl_wdata)
-        with m.If(core.o_spl_re):
-            with m.If(core.o_spl_raddr == SplR.TMPA):
-                m.d.sync += core.i_spl_rdata.eq(spl_tmpa)
-            with m.Elif(core.o_spl_raddr == SplR.TMPB):
-                m.d.sync += core.i_spl_rdata.eq(spl_tmpb)
+        # test wire up the single special unit we have now
+        m.submodules.spl_temp = spl_temp = self.spl_temp
+        m.d.comb += [
+            spl_temp.i_raddr.eq(core.o_spl_raddr),
+            spl_temp.i_re.eq(core.o_spl_re),
+            core.i_spl_rdata.eq(spl_temp.o_rdata),
+            spl_temp.i_waddr.eq(core.o_spl_waddr),
+            spl_temp.i_we.eq(core.o_spl_we),
+            spl_temp.i_wdata.eq(core.o_spl_wdata),
+        ]
 
         # test modify functionality
         with m.If(core.o_mod_type == Mod.COPY):
