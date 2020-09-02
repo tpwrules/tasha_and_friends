@@ -74,10 +74,34 @@ class SimCoreTest(BaseSimTest):
             yield self.core.i_ctl_start.eq(0)
         return proc
 
+class SimTest(BaseSimTest):
+    def setUp(self):
+        self.tb = SimTop(match_d=4, event_d=4, prg_d=32, reg_d=32)
+        self.ev = self.tb.ev
+        self.core = self.tb.ev.core
+
+    # simulation process to load the given program into program memory
+    def proc_load_prg(self, prg):
+        def proc():
+            for addr, insn in enumerate(prg):
+                yield self.tb.prg_mem[addr+1].eq(int(insn))
+        return proc
+
+    # simulation process to load the given program and start it
+    def proc_start_prg(self, prg):
+        def proc():
+            yield from self.proc_load_prg(prg)()
+            yield self.ev.i_ctl_start.eq(1)
+            yield self.ev.i_ctl_pc.eq(1)
+            yield
+            yield self.ev.i_ctl_start.eq(0)
+        return proc
+
 if __name__ == "__main__":
     import unittest
     # import and run all the tests
     from .test_prg_ctl import TestProgramControl
     from .test_core import TestCore
+    from .test_exec import TestExecution
 
     unittest.main()

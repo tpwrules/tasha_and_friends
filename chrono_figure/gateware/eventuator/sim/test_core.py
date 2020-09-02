@@ -5,7 +5,6 @@
 from nmigen import *
 
 from .test import SimCoreTest, cycle_test
-from .top import SimTop
 from ..instructions import *
 
 import unittest

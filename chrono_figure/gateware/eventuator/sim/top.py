@@ -2,7 +2,9 @@ from nmigen import *
 from nmigen.lib.fifo import SyncFIFOBuffered
 from nmigen.sim.pysim import Simulator, Delay
 
+from ..eventuator import Eventuator
 from ..core import EventuatorCore
+from ...match_engine import make_match_info
 from .. import widths
 from ..widths import *
 from ..instructions import *
