@@ -33,14 +33,14 @@ class TemporaryUnit(Elaboratable):
         tmp_b = Signal(DATA_WIDTH)
 
         with m.If(self.i_we):
-            with m.If(self.i_waddr == 0):
+            with m.If(self.i_waddr == SplW.TMPA_OFFSET):
                 m.d.sync += tmp_a.eq(self.i_wdata)
-            with m.Elif(self.i_waddr == 1):
+            with m.Elif(self.i_waddr == SplW.TMPB_OFFSET):
                 m.d.sync += tmp_b.eq(self.i_wdata)
         with m.If(self.i_re):
-            with m.If(self.i_raddr == 0):
+            with m.If(self.i_raddr == SplR.TMPA_OFFSET):
                 m.d.sync += rdata.eq(tmp_a)
-            with m.Elif(self.i_raddr == 1):
+            with m.Elif(self.i_raddr == SplR.TMPB_OFFSET):
                 m.d.sync += rdata.eq(tmp_b)
 
         return m

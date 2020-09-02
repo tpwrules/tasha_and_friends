@@ -5,6 +5,7 @@ from chrono_figure.gateware.match_info import *
 from .isa import *
 from .core import EventuatorCore
 from .special import *
+from .special_map import special_map
 
 class Eventuator(Elaboratable):
     def __init__(self):
@@ -60,16 +61,31 @@ class Eventuator(Elaboratable):
             elif name.startswith("o_"):
                 m.d.comb += getattr(self, name).eq(getattr(core, name))
 
-        # test wire up the single special unit we have now
-        m.submodules.spl_temp = spl_temp = self.spl_temp
-        m.d.comb += [
-            spl_temp.i_raddr.eq(core.o_spl_raddr),
-            spl_temp.i_re.eq(core.o_spl_re),
-            core.i_spl_rdata.eq(spl_temp.o_rdata),
-            spl_temp.i_waddr.eq(core.o_spl_waddr),
-            spl_temp.i_we.eq(core.o_spl_we),
-            spl_temp.i_wdata.eq(core.o_spl_wdata),
-        ]
+        # wire up all the special units using the generated map
+        all_rdata = Const(0, DATA_WIDTH)
+        spl_re = self.core.o_spl_re
+        spl_we = self.core.o_spl_we
+        spl_raddr = self.core.o_spl_raddr
+        spl_waddr = self.core.o_spl_waddr
+        for unit_name, unit_map in special_map.items():
+            # attach the unit's module
+            unit = getattr(self, unit_name)
+            m.submodules[unit_name] = unit
+            # hook up the special bus to it
+            mask = (2**SPL_WIDTH-1) ^ (2**unit_map["width"]-1)
+            m.d.comb += [
+                unit.i_raddr.eq(spl_raddr),
+                unit.i_re.eq(spl_re & ((spl_raddr & mask) == unit_map["base"])),
+                unit.i_waddr.eq(spl_waddr),
+                unit.i_we.eq(spl_we & ((spl_waddr & mask) == unit_map["base"])),
+                unit.i_wdata.eq(self.core.o_spl_wdata),
+            ]
+            # mux the data read from the unit back to the core
+            unit_was_re = Signal(name=unit_name+"_was_re")
+            m.d.sync += unit_was_re.eq(unit.i_re)
+            all_rdata = all_rdata | Mux(unit_was_re, unit.o_rdata, 0)
+
+        m.d.comb += self.core.i_spl_rdata.eq(all_rdata)
 
         # test modify functionality
         with m.If(core.o_mod_type == Mod.COPY):
