@@ -4,7 +4,7 @@
 from nmigen import *
 
 from .test import SimCoreTest, cycle_test
-from ..instructions import *
+from ..isa import *
 
 import unittest
 

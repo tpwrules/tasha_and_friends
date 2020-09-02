@@ -5,16 +5,14 @@ from nmigen.sim.pysim import Simulator, Delay
 from ..eventuator import Eventuator
 from ..core import EventuatorCore
 from ...match_engine import make_match_info
-from .. import widths
-from ..widths import *
-from ..instructions import *
+from .. import isa
 
 # simulate just the eventuation core
 class SimCoreTop(Elaboratable):
     def __init__(self, prg_d=1024, reg_d=256):
         self.core = EventuatorCore()
-        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d, init=[0])
-        self.reg_mem = Memory(width=widths.DATA_WIDTH, depth=reg_d)
+        self.prg_mem = Memory(width=isa.INSN_WIDTH, depth=prg_d, init=[0])
+        self.reg_mem = Memory(width=isa.DATA_WIDTH, depth=reg_d)
 
         self.o_clk = Signal()
 
@@ -56,8 +54,8 @@ class SimTop(Elaboratable):
         self.event_fifo = SyncFIFOBuffered(width=31, depth=event_d)
 
         self.ev = Eventuator()
-        self.prg_mem = Memory(width=widths.INSN_WIDTH, depth=prg_d, init=[0])
-        self.reg_mem = Memory(width=widths.DATA_WIDTH, depth=reg_d)
+        self.prg_mem = Memory(width=isa.INSN_WIDTH, depth=prg_d, init=[0])
+        self.reg_mem = Memory(width=isa.DATA_WIDTH, depth=reg_d)
 
         # write match into fifo
         self.i_match_info = make_match_info()

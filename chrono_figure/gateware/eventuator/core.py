@@ -1,7 +1,6 @@
 from nmigen import *
 
-from .widths import *
-from .instructions import *
+from .isa import *
 
 # handles the PC and starting/stopping the processor
 class ProgramControl(Elaboratable):

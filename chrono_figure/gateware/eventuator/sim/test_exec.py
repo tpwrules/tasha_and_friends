@@ -5,7 +5,7 @@
 from nmigen import *
 
 from .test import SimTest, cycle_test
-from ..instructions import *
+from ..isa import *
 
 import unittest
 

@@ -1,7 +1,6 @@
 from nmigen import *
 
-from .widths import *
-from .instructions import *
+from .isa import *
 
 # stores two temporary values TMPA and TMPB
 # does store to load forwarding

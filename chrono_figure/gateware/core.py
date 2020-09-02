@@ -7,7 +7,7 @@ from .match_info import *
 from .snes_bus import SNESBus
 from .match_engine import MatchEngine, make_match_info
 from .eventuator.eventuator import Eventuator
-from .eventuator import widths
+from .eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
@@ -32,8 +32,8 @@ class ChronoFigureCore(Elaboratable):
         self.match_engine = MatchEngine()
         
         self.eventuator = Eventuator()
-        self.ev_prg_mem = Memory(width=widths.INSN_WIDTH, depth=1024, init=[0])
-        self.ev_reg_mem = Memory(width=widths.DATA_WIDTH, depth=256)
+        self.ev_prg_mem = Memory(width=isa.INSN_WIDTH, depth=1024, init=[0])
+        self.ev_reg_mem = Memory(width=isa.DATA_WIDTH, depth=256)
 
     def elaborate(self, platform):
         m = Module()

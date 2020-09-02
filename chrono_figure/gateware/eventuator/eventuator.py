@@ -1,11 +1,10 @@
 from nmigen import *
 
 from ..match_info import *
-from .widths import *
+from .isa import *
 from ..match_engine import make_match_info
 from .core import EventuatorCore
 from .special import *
-from .instructions import *
 
 class Eventuator(Elaboratable):
     def __init__(self):
