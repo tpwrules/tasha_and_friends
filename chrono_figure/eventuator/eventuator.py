@@ -48,6 +48,7 @@ class Eventuator(Elaboratable):
 
         self.core = EventuatorCore()
         self.spl_temp = TemporaryUnit()
+        self.spl_imm = ImmediateUnit()
 
     def elaborate(self, platform):
         m = Module()

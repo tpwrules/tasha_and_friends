@@ -103,5 +103,6 @@ if __name__ == "__main__":
     from .test_prg_ctl import TestProgramControl
     from .test_core import TestCore
     from .test_exec import TestExecution
+    from .test_spl import TestSpecial
 
     unittest.main()

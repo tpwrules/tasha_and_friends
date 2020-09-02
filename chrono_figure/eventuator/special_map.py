@@ -19,6 +19,17 @@ special_map = {
             ("TMPB", 1, "rw"),
         ),
     },
+
+    "spl_imm": {
+        "width": 2,
+        "regs": (
+            ("IMM_B0", 0, "w"),
+            ("IMM_B1", 1, "w"),
+            ("IMM_B2", 2, "w"),
+            ("IMM_B3", 3, "w"),
+            ("IMM_VAL", 0, "r"),
+        ),
+    }
 }
 
 # validate the units and calculate the base addresses
