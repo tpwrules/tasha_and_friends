@@ -149,7 +149,22 @@ class EventuatorCore(Elaboratable):
             self.o_spl_raddr.eq(fetch_spl),
             self.o_spl_waddr.eq(exec_spl),
             self.o_mod_type.eq(exec_mod),
-            self.o_mod_data.eq(self.i_reg_rdata),
+        ]
+
+        # store to load forwarding logic
+        reg_rdata = Signal(DATA_WIDTH)
+        forward = Signal()
+        forward_data = Signal(DATA_WIDTH)
+        # if we're reading the same register we're writing, we should read the
+        # data that we wrote
+        m.d.sync += [
+            forward.eq((self.o_reg_raddr == self.o_reg_waddr) &
+                (self.o_reg_re == 1) & (self.o_reg_we == 1)),
+            forward_data.eq(self.o_reg_wdata),
+        ]
+        m.d.comb += [
+            reg_rdata.eq(Mux(forward, forward_data, self.i_reg_rdata)),
+            self.o_mod_data.eq(reg_rdata),
         ]
 
         # decoding of fetched instruction. this just sets up the reads of memory
@@ -186,7 +201,7 @@ class EventuatorCore(Elaboratable):
                 with m.If(exec_sel): # regular -> special
                     m.d.comb += [
                         self.o_spl_we.eq(1),
-                        self.o_spl_wdata.eq(self.i_reg_rdata),
+                        self.o_spl_wdata.eq(reg_rdata),
                     ]
                 with m.Else(): # special -> regular
                     m.d.comb += [

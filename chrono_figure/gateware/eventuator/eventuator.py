@@ -59,18 +59,6 @@ class Eventuator(Elaboratable):
             elif name.startswith("o_"):
                 m.d.comb += getattr(self, name).eq(getattr(core, name))
 
-        # store to load forwarding logic. if the eventuator reads the same
-        # regular register it's writing to it should read what it's writing
-        forward = Signal()
-        forward_data = Signal(DATA_WIDTH)
-        m.d.sync += [
-            forward.eq((core.o_reg_raddr == core.o_reg_waddr) &
-                (core.o_reg_re == 1) & (core.o_reg_we == 1)),
-            forward_data.eq(core.o_reg_wdata),
-        ]
-        with m.If(forward):
-            m.d.comb += core.i_reg_rdata.eq(forward_data)
-
         # test special register functionality
         spl_tmpa = Signal(DATA_WIDTH)
         spl_tmpb = Signal(DATA_WIDTH)
