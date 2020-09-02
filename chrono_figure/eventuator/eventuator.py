@@ -1,8 +1,8 @@
 from nmigen import *
 
-from ..match_info import *
+from chrono_figure.gateware.match_engine import make_match_info
+from chrono_figure.gateware.match_info import *
 from .isa import *
-from ..match_engine import make_match_info
 from .core import EventuatorCore
 from .special import *
 

@@ -6,8 +6,8 @@ from nmigen.back import verilog
 from .match_info import *
 from .snes_bus import SNESBus
 from .match_engine import MatchEngine, make_match_info
-from .eventuator.eventuator import Eventuator
-from .eventuator import isa
+from chrono_figure.eventuator.eventuator import Eventuator
+from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
@@ -70,7 +70,7 @@ class ChronoFigureCore(Elaboratable):
             match_engine.i_match_re.eq(eventuator.o_match_re),
 
             event_fifo.w_data.eq(eventuator.o_event),
-            event_fifo.w_en.eq(eventuator.o_event_valid),
+            event_fifo.w_en.eq(eventuator.o_event_we),
             eventuator.i_event_space.eq(event_fifo.w_rdy),
         ]
 
