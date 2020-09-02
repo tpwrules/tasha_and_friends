@@ -2,8 +2,8 @@ from nmigen import *
 
 from .isa import *
 
-# stores two temporary values TMPA and TMPB
-# does store to load forwarding
+# stores two temporary values called TMPA and TMPB which can be arbitrarily read
+# and written
 class TemporaryUnit(Elaboratable):
     def __init__(self):
         # special bus signals
@@ -17,18 +17,6 @@ class TemporaryUnit(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
-        # forwarding logic so a read of the same register on the same cycle as a
-        # write will read the new value instead of the old one
-        rdata = Signal(DATA_WIDTH)
-        forward = Signal()
-        forward_data = Signal(DATA_WIDTH)
-        m.d.sync += [
-            forward.eq((self.i_raddr == self.i_waddr) &
-                (self.i_re == 1) & (self.i_we == 1)),
-            forward_data.eq(self.i_wdata),
-        ]
-        m.d.comb += self.o_rdata.eq(Mux(forward, forward_data, rdata))
-
         tmp_a = Signal(DATA_WIDTH)
         tmp_b = Signal(DATA_WIDTH)
 
@@ -37,11 +25,18 @@ class TemporaryUnit(Elaboratable):
                 m.d.sync += tmp_a.eq(self.i_wdata)
             with m.Elif(self.i_waddr == SplW.TMPB_OFFSET):
                 m.d.sync += tmp_b.eq(self.i_wdata)
-        with m.If(self.i_re):
-            with m.If(self.i_raddr == SplR.TMPA_OFFSET):
-                m.d.sync += rdata.eq(tmp_a)
-            with m.Elif(self.i_raddr == SplR.TMPB_OFFSET):
-                m.d.sync += rdata.eq(tmp_b)
+
+        did_re = Signal()
+        last_raddr = Signal(1)
+        m.d.sync += [
+            did_re.eq(self.i_re),
+            last_raddr.eq(self.i_raddr),
+        ]
+        with m.If(did_re):
+            with m.If(last_raddr == SplR.TMPA_OFFSET):
+                m.d.comb += self.o_rdata.eq(tmp_a)
+            with m.Elif(last_raddr == SplR.TMPB_OFFSET):
+                m.d.comb += self.o_rdata.eq(tmp_b)
 
         return m
 
