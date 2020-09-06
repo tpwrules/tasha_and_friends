@@ -83,7 +83,7 @@ class ALUFrontendUnit(Elaboratable):
 
         # there is only one thing to read so we don't bother listening to the
         # bus signals.
-        m.d.sync += self.o_rdata.eq(self.i_flags)
+        m.d.comb += self.o_rdata.eq(self.i_flags)
 
         return m
 
@@ -171,6 +171,7 @@ class ALU(Elaboratable):
                 Mux(self.i_mod, alu_flags, self.frontend.o_flag_set)),
             flags.i_flag_clr.eq(
                 Mux(self.i_mod, 0xF, self.frontend.o_flag_clr)),
+            self.frontend.i_flags.eq(flags.o_flags),
             self.o_flags.eq(flags.o_flags),
         ]
 

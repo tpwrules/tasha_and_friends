@@ -108,5 +108,38 @@ class TestALU(SimTest, unittest.TestCase):
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
+    @cycle_test
+    def test_ALU_flags_frontend(self):
+        prg = [
+            # high 4 bits: 1 = preserve value, 0 = update value
+            # low 4 bits (if not preserved): 1 = set value, 0 = clear value
+            POKE(SplW.ALU_FLAGS, 0b0000_0000),
+            POKE(SplW.ALU_FLAGS, 0b0000_0101),
+            POKE(SplW.ALU_FLAGS, 0b0101_1010),
+            POKE(SplW.ALU_FLAGS, 0b1111_0000),
+            COPY(3, SplR.ALU_FLAGS),
+            POKE(SplW.ALU_B0, 0b1111),
+            POKE(SplW.ALU_FLAGS, 0b0000_0000),
+            MODIFY(Mod.CMP_B0, 3),
+            POKE(SplW.ALU_FLAGS, 0b0000_0000),
+            POKE(SplW.ALU_FLAGS, 0b1111_0000),
+        ]
+        sets = {}
+        chks = {"vcsz": self.core.i_flags}
+        vals = [
+            ({}, {}), ({}, {}),
+            ({}, {"vcsz": 0b0000}),
+            ({}, {"vcsz": 0b0101}),
+            ({}, {"vcsz": 0b1111}),
+            ({}, {"vcsz": 0b1111}),
+            ({}, {}), ({}, {}),
+            ({}, {"vcsz": 0b0000}),
+            ({}, {"vcsz": 0b0101}),
+            ({}, {"vcsz": 0b0000}),
+            ({}, {"vcsz": 0b0000}),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
 if __name__ == "__main__":
     unittest.main()
