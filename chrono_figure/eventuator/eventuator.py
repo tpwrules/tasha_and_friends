@@ -97,6 +97,7 @@ class Eventuator(Elaboratable):
         m.d.comb += [
             alu.i_mod_type.eq(core.o_mod_type[:6]),
             alu.i_mod_data.eq(core.o_mod_data),
+            core.i_flags.eq(alu.o_flags),
         ]
 
         # test modify functionality
@@ -105,7 +106,7 @@ class Eventuator(Elaboratable):
         with m.Elif(core.o_mod_type & 0xC0 == 0xC0):
             m.d.comb += [
                 core.i_mod_data.eq(alu.o_mod_data),
-                alu.i_mod.eq(1),
+                alu.i_mod.eq(core.o_mod),
             ]
 
         return m

@@ -1,6 +1,7 @@
 from nmigen import *
 
 from .isa import *
+from .alu import Flags
 
 # handles the PC and starting/stopping the processor
 class ProgramControl(Elaboratable):
@@ -95,6 +96,8 @@ class EventuatorCore(Elaboratable):
         self.o_mod_data = Signal(DATA_WIDTH) # data to be modified
         self.i_mod_data = Signal(DATA_WIDTH) # modified data returned
 
+        self.i_flags = Signal(4) # ALU flags to control branches
+
         self.prg_ctl = ProgramControl()
 
     def elaborate(self, platform):
@@ -170,14 +173,25 @@ class EventuatorCore(Elaboratable):
         # (and also executes branch instructions so we don't have delay slots)
         with m.Switch(fetch_insn[16:]):
             with m.Case(InsnCode.BRANCH):
+                f = self.i_flags
+                branches = {
+                    Cond.ALWAYS: 1,
+                    Cond.LEU: ~f[Flags.C] | f[Flags.Z],
+                    Cond.LTS: f[Flags.S] ^ f[Flags.V],
+                    Cond.LES: f[Flags.S] ^ f[Flags.V] | f[Flags.Z],
+                    Cond.Z1: f[Flags.Z],
+                    Cond.S1: f[Flags.S],
+                    Cond.C1: f[Flags.C],
+                    Cond.V1: f[Flags.V],
+                }
                 should_branch = Signal()
-                with m.Switch(fetch_cond):
-                    with m.Case(Cond.ALWAYS):
-                        m.d.comb += should_branch.eq(1)
-                    with m.Case(Cond.NEVER):
-                        m.d.comb += should_branch.eq(0)
+                with m.Switch(fetch_cond[1:]):
+                    for cond_num, cond in branches.items():
+                        with m.Case(cond_num >> 1): # low bit inverts branch
+                            m.d.comb += should_branch.eq(cond)
+                del f, branches
 
-                m.d.comb += prg_ctl.i_branch.eq(should_branch)
+                m.d.comb += prg_ctl.i_branch.eq(should_branch ^ fetch_cond[0])
 
             with m.Case(InsnCode.COPY):
                 with m.If(fetch_sel): # regular -> special

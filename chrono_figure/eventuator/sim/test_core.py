@@ -6,6 +6,7 @@ from nmigen import *
 
 from .test import SimCoreTest, cycle_test
 from ..isa import *
+from ..alu import Flags
 
 import unittest
 
@@ -35,6 +36,47 @@ class TestCore(SimCoreTest, unittest.TestCase):
             ({}, {"pc": 4}),
             ({}, {"pc": 2}),
             # and so on
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
+    @cycle_test
+    def test_BRANCH_flag_logic(self):
+        prg = [
+            BRANCH(0, Cond.GTU),
+            BRANCH(0, Cond.LEU),
+            BRANCH(0, Cond.GES),
+            BRANCH(0, Cond.LTS),
+            BRANCH(0, Cond.GTS),
+            BRANCH(0, Cond.LES),
+            BRANCH(0, Cond.Z0),
+            BRANCH(0, Cond.Z1),
+            BRANCH(0, Cond.S0),
+            BRANCH(0, Cond.S1),
+            BRANCH(0, Cond.C0),
+            BRANCH(0, Cond.C1),
+            BRANCH(0, Cond.V0),
+            BRANCH(0, Cond.V1),
+        ]
+        sets = {"vcsz": self.core.i_flags}
+        chks = {"pc": self.core.o_prg_addr}
+        vals = [
+            ({},               {"pc": 1}),
+            ({"vcsz": 0b0001}, {"pc": 2}),
+            ({"vcsz": 0b0100}, {"pc": 3}),
+            ({"vcsz": 0b1000}, {"pc": 4}),
+            ({"vcsz": 0b0000}, {"pc": 5}),
+            ({"vcsz": 0b0010}, {"pc": 6}),
+            ({"vcsz": 0b0000}, {"pc": 7}),
+            ({"vcsz": 0b0001}, {"pc": 8}),
+            ({"vcsz": 0b0000}, {"pc": 9}),
+            ({"vcsz": 0b0010}, {"pc": 10}),
+            ({"vcsz": 0b0000}, {"pc": 11}),
+            ({"vcsz": 0b0100}, {"pc": 12}),
+            ({"vcsz": 0b0000}, {"pc": 13}),
+            ({"vcsz": 0b1000}, {"pc": 14}),
+            ({"vcsz": 0b0000}, {"pc": 15}),
+            ({"vcsz": 0b0000}, {"pc": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)

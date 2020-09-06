@@ -14,9 +14,41 @@ class InsnCode(IntEnum):
     POKE = 2
     MODIFY = 3
 
-class Cond(IntEnum):
-    ALWAYS = 0
-    NEVER = 15
+class Cond(IntEnum): # low bit is set -> invert condition
+    # like it says
+    ALWAYS = 0 # must always be 0!
+    NEVER = 1
+    # not C or Z
+    LEU = 2
+    GTU = 3
+    # S xor V
+    LTS = 4
+    GES = 5
+    # S xor V or Z
+    LES = 6
+    GTS = 7
+    # Z = 1
+    EQ = 8
+    NE = 9
+    Z1 = 8
+    Z0 = 9
+    # S = 1
+    MI = 10
+    PL = 11
+    S1 = 10
+    S0 = 11
+    # C = 1
+    CS = 12
+    CC = 13
+    GEU = 12
+    LTU = 13
+    C1 = 12
+    C0 = 13
+    # V = 1
+    VS = 14
+    VC = 15
+    V1 = 14
+    V0 = 15
 
 class Mod(IntEnum):
     COPY = 1
