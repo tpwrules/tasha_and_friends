@@ -29,6 +29,15 @@ special_map = {
             ("IMM_B3", 3, "w"),
             ("IMM_VAL", 0, "r"),
         ),
+    },
+
+    "spl_alu_frontend": {
+        "width": 2,
+        "regs": (
+            ("ALU_B0", 0, "w"),
+            ("ALU_B1", 1, "w"),
+            ("ALU_FLAGS", 2, "rw"),
+        ),
     }
 }
 

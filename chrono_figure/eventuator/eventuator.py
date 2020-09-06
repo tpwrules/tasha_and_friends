@@ -4,6 +4,7 @@ from chrono_figure.gateware.match_engine import make_match_info
 from chrono_figure.gateware.match_info import *
 from .isa import *
 from .core import EventuatorCore
+from .alu import ALU, ALUFrontendUnit
 from .special import *
 from .special_map import special_map
 
@@ -46,14 +47,18 @@ class Eventuator(Elaboratable):
         self.o_event_we = Signal()
         self.i_event_space = Signal() # space for more valid events
 
-        self.core = EventuatorCore()
+        self.spl_alu_frontend = ALUFrontendUnit()
         self.spl_temp = TemporaryUnit()
         self.spl_imm = ImmediateUnit()
+
+        self.core = EventuatorCore()
+        self.alu = ALU(self.spl_alu_frontend)
 
     def elaborate(self, platform):
         m = Module()
 
         m.submodules.core = core = self.core
+        m.submodules.alu = alu = self.alu
 
         # automatically wire up passed through signals
         for name in set(dir(self)) & set(dir(core)):
@@ -88,8 +93,19 @@ class Eventuator(Elaboratable):
 
         m.d.comb += self.core.i_spl_rdata.eq(all_rdata)
 
+        # hook up ALU
+        m.d.comb += [
+            alu.i_mod_type.eq(core.o_mod_type[:6]),
+            alu.i_mod_data.eq(core.o_mod_data),
+        ]
+
         # test modify functionality
         with m.If(core.o_mod_type == Mod.COPY):
             m.d.comb += core.i_mod_data.eq(core.o_mod_data)
+        with m.Elif(core.o_mod_type & 0xC0 == 0xC0):
+            m.d.comb += [
+                core.i_mod_data.eq(alu.o_mod_data),
+                alu.i_mod.eq(1),
+            ]
 
         return m

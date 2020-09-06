@@ -21,6 +21,85 @@ class Cond(IntEnum):
 class Mod(IntEnum):
     COPY = 1
 
+    # ALU mod code encodings
+    # 11wssooo
+    # w: 1 if result should be written to destination (otherwise not modified)
+    # ss: B input source (or shift mode)
+    #   0b00: 0 (or shift left)
+    #   0b01: 1 (or shift right)
+    #   0b10: B0 (or rotate left)
+    #   0b11: B1 (or rotate right)
+    # ooo: operation code
+    #   0b000: AND
+    #   0b001: OR
+    #   0b010: XOR
+    #   0b011: undefined
+    #   0b100: add
+    #   0b101: subtract
+    #   0b110: shift/rotate (action selected by B input)
+    #   0b111: undefined
+
+    # NOP           = 0b110_00_000
+    TEST_LSB        = 0b110_01_000
+    TEST_B0         = 0b110_10_000
+    TEST_B1         = 0b110_11_000
+
+    TEST_ZERO       = 0b110_00_001
+    # NOP           = 0b110_01_001
+    # NOP           = 0b110_10_001
+    # NOP           = 0b110_11_001
+
+    # NOP           = 0b110_00_010
+    # NOP           = 0b110_01_010
+    # NOP           = 0b110_10_010
+    # NOP           = 0b110_11_010
+
+    # NOP           = 0b110_00_100
+    # NOP           = 0b110_01_100
+    # NOP           = 0b110_10_100
+    # NOP           = 0b110_11_100
+
+    # NOP           = 0b110_00_101
+    CMP_1           = 0b110_01_101
+    CMP_B0          = 0b110_10_101
+    CMP_B1          = 0b110_11_101
+
+    # NOP           = 0b110_00_110
+    # NOP           = 0b110_01_110
+    # NOP           = 0b110_10_110
+    # NOP           = 0b110_11_110
+
+    ZERO            = 0b111_00_000
+    GET_LSB         = 0b111_01_000
+    AND_B0          = 0b111_10_000
+    AND_B1          = 0b111_11_000
+
+    # NOP           = 0b111_00_001
+    SET_LSB         = 0b111_01_001
+    OR_B0           = 0b111_10_001
+    OR_B1           = 0b111_11_001
+
+    # NOP           = 0b111_00_010
+    FLIP_LSB        = 0b111_01_010
+    XOR_B0          = 0b111_10_010
+    XOR_B1          = 0b111_11_010
+
+    ADD_0           = 0b111_00_100
+    INC             = 0b111_01_100
+    ADD_B0          = 0b111_10_100
+    ADD_B1          = 0b111_11_100
+
+    SUB_0           = 0b111_00_101
+    DEC             = 0b111_01_101
+    SUB_B0          = 0b111_10_101
+    SUB_B1          = 0b111_11_101
+
+    SHIFT_LEFT      = 0b111_00_110
+    SHIFT_RIGHT     = 0b111_01_110
+    ROTATE_LEFT     = 0b111_10_110
+    ROTATE_RIGHT    = 0b111_11_110
+
+
 # set the PC to the destination if the condition is true
 class BRANCH:
     def __init__(self, dest, cond=Cond.ALWAYS):
