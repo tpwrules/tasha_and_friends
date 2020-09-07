@@ -1,9 +1,11 @@
 # talk to chrono figure's gateware inside the usb2snes
 
 import struct
+import time
 
 from . import usb2snes
 from ..gateware import core as gateware
+from chrono_figure.eventuator.isa import *
 
 # usb2snes expected firmware version
 FIRMWARE_VERSION = 0xC10A0301
@@ -21,6 +23,87 @@ ADDR_MATCHER_CONFIG = 0x10000000
 ADDR_EVENT_FIFO = 0x80000000
 
 class CFInterfaceError(Exception): pass
+
+# program that emulates the old fixed-function Chrono Fgure
+FIXED_FUNCTION_PROGRAM = [
+    # we start at PC=1
+    POKE(SplW.IMM_B0, 0), # build constant with bit 30 set
+    POKE(SplW.IMM_B3, 1<<6),
+    COPY(3, SplR.IMM_VAL),
+    POKE(SplW.IMM_B0, 0x1FF), # build constant of (1<<29)-1
+    POKE(SplW.IMM_B3, ((1<<29)-1)>>24),
+    COPY(4, SplR.IMM_VAL),
+    # we can now enable the matchers and wait for an event
+    POKE(SplW.MATCH_ENABLE, 1), # value written does not matter
+
+    # fallthrough that just kind of wastes time but is otherwise okay
+
+    # PC = 8: MATCH_TYPE_RESET handler
+    # remember starting cycle so we can subtract it from all subsequent ones
+    COPY(0, SplR.MATCH_CYCLE_COUNT),
+    COPY(SplW.ALU_B1, 0),
+    MODIFY(Mod.ZERO, 1), # clear currently waiting flag
+    POKE(SplW.TMPA, 0), # clear event counter
+    # pad to PC=16
+    *[BRANCH(0)]*4,
+
+    # PC = 16: MATCH_TYPE_NMI handler
+    COPY(0, SplR.MATCH_CYCLE_COUNT), # get cycle of this event
+    MODIFY(Mod.SUB_B1, 0), # subtract offset to get relative cycle
+    COPY(SplW.ALU_B0, 4), # mask to 29 bits
+    MODIFY(Mod.AND_B0, 0),
+    COPY(2, SplR.TMPA), # get low bit of event counter
+    MODIFY(Mod.GET_LSB, 2),
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    BRANCH(34), # continue
+
+    # PC = 24: MATCH_TYPE_WAIT_START handler
+    MODIFY(Mod.TEST_LSB, 1), # don't do anything if we are currently waiting
+    BRANCH(0, Cond.Z0),
+    COPY(5, SplR.MATCH_CYCLE_COUNT), # save relative cycle as wait cycle
+    MODIFY(Mod.SUB_B1, 5),
+    COPY(SplW.ALU_B0, 4), # mask to 29 bits
+    MODIFY(Mod.AND_B0, 5),
+    MODIFY(Mod.SET_LSB, 1), # and set wait flag
+    # pad to PC=32
+    *[BRANCH(0)]*1,
+
+    # PC = 32: MATCH_TYPE_WAIT_END handler
+    MODIFY(Mod.ZERO, 1), # clear currently waiting flag
+    BRANCH(0),
+
+    # MATCH_TYPE_NMI continued
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    COPY(SplW.ALU_B0, 3), # set bit 30 using premade constant
+    MODIFY(Mod.OR_B0, 2),
+    COPY(SplW.ALU_B0, 0), # OR in the event's cycle
+    MODIFY(Mod.OR_B0, 2),
+    COPY(SplW.EVENT_FIFO, 2), # send the first event word
+    MODIFY(Mod.TEST_LSB, 1), # get wait cycle if waiting
+    BRANCH(44, Cond.Z1),
+    COPY(SplW.ALU_B0, 5),
+    # PC = 44
+    COPY(2, SplR.TMPA), # get high bit of event counter
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(Mod.GET_LSB, 2),
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(Mod.OR_B0, 2), # OR in the cycle
+    COPY(SplW.EVENT_FIFO, 2), # send the second event word
+    MODIFY(Mod.ZERO, 1), # clear currently waiting flag
+    # increment event counter
+    COPY(2, SplR.TMPA),
+    MODIFY(Mod.INC, 2),
+    COPY(SplW.TMPA, 2),
+    # reset back to 1 if it's now 4 (we don't use 0 except for reset)
+    POKE(SplW.ALU_B0, 4),
+    MODIFY(Mod.CMP_B0, 2),
+    BRANCH(0, Cond.NE),
+    POKE(SplW.TMPA, 1),
+    BRANCH(0),
+]
 
 class ChronoFigureInterface:
     def __init__(self):
@@ -110,6 +193,42 @@ class ChronoFigureInterface:
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
             ADDR_CLEAR_SAVE_RAM, struct.pack("<I", CLEAR_SAVE_RAM_KEY))
 
+    # run a program on the eventuator and optionally wait for it to complete
+    def _exec_program(self, prg, wait=False):
+        if len(prg) > 250:
+            raise Exception("program is too long at {} insns".format(len(prg)))
+
+        # add instructions so we know when the program ends
+        if wait:
+            prg = [
+                *prg,
+                POKE(SplW.EVENT_FIFO, 2),
+                BRANCH(0),
+            ]
+
+        # stop the eventuator (and clear match FIFO)
+        self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
+            ADDR_MATCHER_CONFIG, (0x80000000).to_bytes(4, "little"))
+        # clear out any old events
+        self.device.read_space(usb2snes.SPACE_CHRONO_FIGURE,
+            ADDR_EVENT_FIFO, 512)
+        # transfer in the program
+        prg = struct.pack("<{}I".format(len(prg)), *(int(i) for i in prg))
+        self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
+            ADDR_MATCHER_CONFIG+4, prg)
+        # start the eventuator at the start of the program
+        self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
+            ADDR_MATCHER_CONFIG, (1).to_bytes(4, "little"))
+        # wait for it to finish (if asked)
+        if wait:
+            while True:
+                new_data = struct.unpack("<128I", self.device.read_space(
+                    usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
+                event_data = list(filter(lambda w: not (w & (1<<31)), new_data))
+                if len(event_data) > 0 and event_data[0] == 2:
+                    break
+                time.sleep(0.01)
+
     def _make_matcher_config(self, address, match_type):
         valid_address = int(address) & 0xFFFFFF
         if valid_address != address:
@@ -118,20 +237,6 @@ class ChronoFigureInterface:
         if valid_match_type != match_type:
             raise CFInterfaceError("invalid match type '{}'".format(match_type))
         return struct.pack("<I", (valid_address + (valid_match_type<<24)))
-
-    # configure the given matcher with the given address and type
-    def configure_matcher(self, which, address, match_type):
-        self._check_dev()
-
-        which = int(which) & 0xFFFFFFFF
-        if which > gateware.NUM_MATCHERS:
-            raise CFInterfaceError("attempted to configure matcher {}, but "
-                "the gateware has only {}".format(
-                    which, gateware.NUM_MATCHERS))
-
-        config_data = self._make_matcher_config(address, match_type)
-        self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
-            ADDR_MATCHER_CONFIG+(which*4), config_data)
 
     # configure the matchers with an iterable of (address, match_type) tuples.
     # if there are less matchers than the number of configurations, the
@@ -156,8 +261,11 @@ class ChronoFigureInterface:
         config_data.append(b'\x00'*(4*(num_matchers-len(config_data))))
         config_data = b''.join(config_data)
 
-        self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
-            ADDR_MATCHER_CONFIG, config_data)
+        # build and run a program to configure the matchers
+        prg = [POKE(SplW.MATCH_CONFIG_ADDR, 0)]
+        for byte in config_data:
+            prg.append(POKE(SplW.MATCH_CONFIG_DATA, byte))
+        self._exec_program(prg, wait=True)
 
     # reset the console and start measurements
     def start_measurement(self):
@@ -165,10 +273,8 @@ class ChronoFigureInterface:
 
         # assert reset so the console won't interrupt us
         self.assert_reset(True)
-        # the event FIFO is 128 words, so we read 512 bytes to guarantee we've
-        # got all the old events out of it
-        self.device.read_space(usb2snes.SPACE_CHRONO_FIGURE,
-            ADDR_EVENT_FIFO, 512)
+        # start the program running (and clear the event FIFO)
+        self._exec_program(FIXED_FUNCTION_PROGRAM)
         self.last_data = [] # junk all the unparsed event pieces too
         # the only event with number 0 is the first event after reset
         self.next_event_counter = 0
