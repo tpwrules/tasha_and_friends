@@ -91,10 +91,10 @@ class TestALU(SimTest, unittest.TestCase):
 
         sets = {"r3": self.tb.reg_mem[3],
                 "b0": self.ev.spl_alu_frontend.o_B0}
-        chks = {"pc": self.core.o_prg_addr}
+        chks = {"pc": self.core.prg_ctl.o_fetch_addr}
         prg = []
         vals = []
-        pc = 1
+        pc = 0
         for a, b, *conds in tests:
             vals.append(({"r3": a, "b0": b}, {"pc": pc}))
             prg.append(MODIFY(Mod.CMP_B0, 3))
@@ -104,6 +104,7 @@ class TestALU(SimTest, unittest.TestCase):
                 vals.append(({}, {"pc": pc}))
                 pc += 1
         vals.append(({}, {"pc": pc}))
+        vals.append(({}, {"pc": pc+1}))
         vals.append(({}, {"pc": 0}))
 
         return sets, chks, vals, self.proc_start_prg(prg)

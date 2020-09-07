@@ -19,19 +19,25 @@ class ProgramControl(Elaboratable):
         self.i_branch_target = Signal(PC_WIDTH)
 
         self.o_prg_addr = Signal(PC_WIDTH) # what instruction to read next
-        self.o_branch_0 = Signal() # force a branch to PC=0 (i.e. stop)
+        self.i_prg_data = Signal(INSN_WIDTH) # the read instruction
+
+        self.o_fetch_insn = Signal(INSN_WIDTH) # insn that was just fetched
+        self.o_fetch_addr = Signal(PC_WIDTH) # its address (for debugging)
 
     def elaborate(self, platform):
         m = Module()
 
         # this is all disgusting combinatorial logic. hopefully it's fast!
 
+        m.d.comb += self.o_fetch_insn.eq(self.i_prg_data)
+
         stopping = Signal()
         # stop the processor if we branch to address 0
         m.d.comb += stopping.eq(self.i_branch & (self.i_branch_target == 0))
         # if a stop is requested, we force the processor to branch to address 0
         # and so trigger a stop itself
-        m.d.comb += self.o_branch_0.eq(self.i_ctl_stop)
+        with m.If(self.i_ctl_stop):
+            m.d.comb += self.o_fetch_insn.eq(0)
 
         curr_pc = Signal(PC_WIDTH)
         stopped = Signal()
@@ -54,6 +60,9 @@ class ProgramControl(Elaboratable):
             # increment the PC like normal
             m.d.comb += self.o_prg_addr.eq(curr_pc)
             m.d.sync += curr_pc.eq(curr_pc+1)
+
+        # intended for debugging
+        m.d.sync += self.o_fetch_addr.eq(self.o_prg_addr)
 
         return m
 
@@ -114,7 +123,7 @@ class EventuatorCore(Elaboratable):
             prg_ctl.i_ctl_stop.eq(self.i_ctl_stop),
 
             self.o_prg_addr.eq(prg_ctl.o_prg_addr),
-            force_branch_0.eq(prg_ctl.o_branch_0),
+            prg_ctl.i_prg_data.eq(self.i_prg_data),
         ]
 
         # instruction being fetched (and slightly executed)
@@ -122,7 +131,7 @@ class EventuatorCore(Elaboratable):
         # instruction being executed and completed
         exec_insn = Signal(INSN_WIDTH)
         m.d.sync += exec_insn.eq(fetch_insn)
-        m.d.comb += fetch_insn.eq(Mux(force_branch_0, 0, self.i_prg_data))
+        m.d.comb += fetch_insn.eq(prg_ctl.o_fetch_insn)
 
         # instruction field selection
         # branch target for BRANCH

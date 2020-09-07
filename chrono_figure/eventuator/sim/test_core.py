@@ -22,9 +22,10 @@ class TestCore(SimCoreTest, unittest.TestCase):
             BRANCH(5),
         ]
         sets = {}
-        chks = {"pc": self.core.o_prg_addr}
+        chks = {"pc": self.core.prg_ctl.o_fetch_addr}
         vals = [
             # make sure all the branches get followed
+            ({}, {"pc": 0}),
             ({}, {"pc": 1}),
             ({}, {"pc": 6}),
             ({}, {"pc": 5}),
@@ -59,22 +60,23 @@ class TestCore(SimCoreTest, unittest.TestCase):
             BRANCH(0, Cond.V1),
         ]
         sets = {"vcsz": self.core.i_flags}
-        chks = {"pc": self.core.o_prg_addr}
+        chks = {"pc": self.core.prg_ctl.o_fetch_addr}
         vals = [
-            ({},               {"pc": 1}),
-            ({"vcsz": 0b0001}, {"pc": 2}),
-            ({"vcsz": 0b0100}, {"pc": 3}),
-            ({"vcsz": 0b1000}, {"pc": 4}),
-            ({"vcsz": 0b0000}, {"pc": 5}),
-            ({"vcsz": 0b0010}, {"pc": 6}),
-            ({"vcsz": 0b0000}, {"pc": 7}),
-            ({"vcsz": 0b0001}, {"pc": 8}),
-            ({"vcsz": 0b0000}, {"pc": 9}),
-            ({"vcsz": 0b0010}, {"pc": 10}),
-            ({"vcsz": 0b0000}, {"pc": 11}),
-            ({"vcsz": 0b0100}, {"pc": 12}),
-            ({"vcsz": 0b0000}, {"pc": 13}),
-            ({"vcsz": 0b1000}, {"pc": 14}),
+            ({},               {"pc": 0}),
+            ({"vcsz": 0b0001}, {"pc": 1}),
+            ({"vcsz": 0b0100}, {"pc": 2}),
+            ({"vcsz": 0b1000}, {"pc": 3}),
+            ({"vcsz": 0b0000}, {"pc": 4}),
+            ({"vcsz": 0b0010}, {"pc": 5}),
+            ({"vcsz": 0b0000}, {"pc": 6}),
+            ({"vcsz": 0b0001}, {"pc": 7}),
+            ({"vcsz": 0b0000}, {"pc": 8}),
+            ({"vcsz": 0b0010}, {"pc": 9}),
+            ({"vcsz": 0b0000}, {"pc": 10}),
+            ({"vcsz": 0b0100}, {"pc": 11}),
+            ({"vcsz": 0b0000}, {"pc": 12}),
+            ({"vcsz": 0b1000}, {"pc": 13}),
+            ({"vcsz": 0b0000}, {"pc": 14}),
             ({"vcsz": 0b0000}, {"pc": 15}),
             ({"vcsz": 0b0000}, {"pc": 0}),
         ]
