@@ -34,5 +34,25 @@ class TestSpecial(SimTest, unittest.TestCase):
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
+    @cycle_test
+    def test_spl_event_fifo(self):
+        prg = [
+            POKE(SplW.EVENT_FIFO, 69),
+        ]
+        sets = {"re": self.tb.i_event_re}
+        chks = {"rdy": self.tb.o_event_valid,
+                "data": self.tb.o_event}
+        vals = [
+            ({}, {}),
+            ({}, {}),
+            ({}, {}),
+            ({}, {}),
+            ({"re": 1}, {"rdy": 1, "data": 69}),
+            ({"re": 0}, {"rdy": 0}),
+            ({}, {}),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
 if __name__ == "__main__":
     unittest.main()

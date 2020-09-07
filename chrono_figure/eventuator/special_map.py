@@ -38,7 +38,14 @@ special_map = {
             ("ALU_B1", 1, "w"),
             ("ALU_FLAGS", 2, "rw"),
         ),
-    }
+    },
+
+    "spl_event_fifo": {
+        "width": 0,
+        "regs": (
+            ("EVENT_FIFO", 0, "w"),
+        ),
+    },
 }
 
 # validate the units and calculate the base addresses

@@ -73,3 +73,27 @@ class ImmediateUnit(Elaboratable):
         m.d.comb += self.o_rdata.eq(immediate)
 
         return m
+
+# writes words to the event FIFO
+class EventFIFOUnit(Elaboratable):
+    def __init__(self):
+        # special bus signals
+        self.i_raddr = Signal(0)
+        self.i_re = Signal()
+        self.o_rdata = Signal(DATA_WIDTH)
+        self.i_waddr = Signal(0)
+        self.i_we = Signal()
+        self.i_wdata = Signal(DATA_WIDTH)
+
+        self.o_event = Signal(31)
+        self.o_event_we = Signal()
+
+    def elaborate(self, platform):
+        m = Module()
+
+        m.d.comb += [
+            self.o_event.eq(self.i_wdata),
+            self.o_event_we.eq(self.i_we),
+        ]
+
+        return m

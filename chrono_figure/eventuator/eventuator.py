@@ -50,6 +50,7 @@ class Eventuator(Elaboratable):
         self.spl_alu_frontend = ALUFrontendUnit()
         self.spl_temp = TemporaryUnit()
         self.spl_imm = ImmediateUnit()
+        self.spl_event_fifo = EventFIFOUnit()
 
         self.core = EventuatorCore()
         self.alu = ALU(self.spl_alu_frontend)
@@ -98,6 +99,12 @@ class Eventuator(Elaboratable):
             alu.i_mod_type.eq(core.o_mod_type[:6]),
             alu.i_mod_data.eq(core.o_mod_data),
             core.i_flags.eq(alu.o_flags),
+        ]
+
+        # hook up event FIFO
+        m.d.comb += [
+            self.o_event.eq(self.spl_event_fifo.o_event),
+            self.o_event_we.eq(self.spl_event_fifo.o_event_we),
         ]
 
         # test modify functionality
