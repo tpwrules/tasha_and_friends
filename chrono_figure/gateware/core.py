@@ -11,7 +11,7 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1000
+GATEWARE_VERSION = 1001
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -39,9 +39,7 @@ class ChronoFigureCore(Elaboratable):
         m = Module()
 
         m.submodules.bus = bus = self.bus
-        enable_match_fifo = Signal()
-        m.submodules.match_fifo = match_fifo = \
-            ResetInserter(~enable_match_fifo)(self.match_fifo)
+        m.submodules.event_fifo = event_fifo = self.event_fifo
         m.submodules.match_engine = match_engine = self.match_engine
 
         m.submodules.eventuator = eventuator = self.eventuator
@@ -54,10 +52,9 @@ class ChronoFigureCore(Elaboratable):
 
         # hook up match engine to the bus
         m.d.comb += [
-            # temporary, will be attached to eventuator soon
-            match_engine.i_config.eq(self.i_config),
-            match_engine.i_config_addr.eq(self.i_config_addr),
-            match_engine.i_config_we.eq(self.i_config_we),
+            match_engine.i_config.eq(eventuator.o_match_config),
+            match_engine.i_config_addr.eq(eventuator.o_match_config_addr),
+            match_engine.i_config_we.eq(eventuator.o_match_config_we),
 
             match_engine.i_bus_valid.eq(bus.o_valid),
             match_engine.i_bus_addr.eq(bus.o_addr),
@@ -98,8 +95,22 @@ class ChronoFigureCore(Elaboratable):
             event_fifo.r_en.eq(self.i_event_re),
         ]
         with m.If(eventuator.i_ctl_stop):
-            m.d.sync += enable_match_fifo.eq(0)
+            m.d.sync += match_engine.i_reset_match_fifo.eq(1)
         with m.Elif(eventuator.o_match_enable):
-            m.d.sync += enable_match_fifo.eq(1)
+            m.d.sync += match_engine.i_reset_match_fifo.eq(0)
+
+        # allow "configuration" of program memory
+        m.d.comb += [
+            ev_prg_wr.addr.eq(self.i_config_addr),
+            ev_prg_wr.data.eq(self.i_config),
+            ev_prg_wr.en.eq(self.i_config_we & (self.i_config_addr != 0)),
+
+            eventuator.i_ctl_pc.eq(self.i_config),
+        ]
+        with m.If(self.i_config_we & (self.i_config_addr == 0)):
+            m.d.comb += [
+                eventuator.i_ctl_start.eq(~self.i_config[-1]),
+                eventuator.i_ctl_stop.eq(self.i_config[-1]),
+            ]
 
         return m

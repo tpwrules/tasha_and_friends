@@ -33,46 +33,35 @@ class MatchEngine(Elaboratable):
         self.i_cycle_count = Signal(32)
 
         # config bus signals
-        self.i_config = Signal(32)
-        self.i_config_addr = Signal(8)
+        self.i_config = Signal(8)
+        self.i_config_addr = Signal(10)
         self.i_config_we = Signal()
 
         self.o_match_info = make_match_info()
         self.o_match_valid = Signal()
         self.i_match_re = Signal()
+        self.i_reset_match_fifo = Signal()
 
         self.match_fifo = SyncFIFOBuffered(width=72, depth=256)
 
     def elaborate(self, platform):
         m = Module()
 
-        m.submodules.match_fifo = match_fifo = self.match_fifo
+        m.submodules.match_fifo = match_fifo = \
+            ResetInserter(self.i_reset_match_fifo)(self.match_fifo)
 
-        # convert 32 bit config word into four 8 bit writes
+        # wire up config byte and generate byte selects
         mb_config_data = Signal(8)
         mb_config_addr = Signal(MATCHER_BITS)
         mb_config_we = Signal(4) # one line per byte
-        config_tmp = Signal(32)
-        with m.FSM("IDLE"):
-            with m.State("IDLE"):
-                # latch current config input
-                m.d.sync += [
-                    mb_config_we.eq(0),
-                    config_tmp.eq(self.i_config),
-                    mb_config_addr.eq(self.i_config_addr),
-                ]
-                with m.If(self.i_config_we):
-                    # when write enable is asserted, we will write what we latch
-                    # this cycle over the next four
-                    m.next = "WB0"
-
-            for byte_i in range(4):
-                with m.State("WB{}".format(byte_i)):
-                    m.d.sync += [
-                        mb_config_we.eq(1<<byte_i),
-                        mb_config_data.eq(config_tmp[byte_i*8:(byte_i+1)*8]),
-                    ]
-                    m.next = "WB{}".format(byte_i+1) if byte_i < 3 else "IDLE"
+        m.d.sync += [
+            mb_config_data.eq(self.i_config),
+            mb_config_addr.eq(self.i_config_addr[2:]),
+            mb_config_we[0].eq(self.i_config_we & (self.i_config_addr[:2] == 0)),
+            mb_config_we[1].eq(self.i_config_we & (self.i_config_addr[:2] == 1)),
+            mb_config_we[2].eq(self.i_config_we & (self.i_config_addr[:2] == 2)),
+            mb_config_we[3].eq(self.i_config_we & (self.i_config_addr[:2] == 3)),
+        ]
 
         # buffer the matcher input signals to ensure the best timing
         mb_addr = Signal(24)
