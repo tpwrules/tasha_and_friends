@@ -92,7 +92,7 @@ class EventFIFOUnit(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
-        m.d.comb += [
+        m.d.sync += [
             self.o_event.eq(self.i_wdata),
             self.o_event_we.eq(self.i_we),
         ]
@@ -118,14 +118,15 @@ class MatcherConfigUnit(Elaboratable):
         m = Module()
 
         curr_addr = Signal(10)
+        m.d.sync += self.o_match_config_we.eq(0)
         with m.If(self.i_we):
             with m.If(self.i_waddr == SplW.MATCH_CONFIG_ADDR_OFFSET):
                 m.d.sync += curr_addr.eq(self.i_wdata)
             with m.Elif(self.i_waddr == SplW.MATCH_CONFIG_DATA_OFFSET):
-                m.d.comb += self.o_match_config_we.eq(1)
+                m.d.sync += self.o_match_config_we.eq(1)
                 m.d.sync += curr_addr.eq(curr_addr + 1)
 
-        m.d.comb += [
+        m.d.sync += [
             self.o_match_config.eq(self.i_wdata),
             self.o_match_config_addr.eq(curr_addr),
         ]

@@ -47,6 +47,7 @@ class TestSpecial(SimTest, unittest.TestCase):
             ({}, {}),
             ({}, {}),
             ({}, {}),
+            ({}, {}),
             ({"re": 1}, {"rdy": 1, "data": 69}),
             ({"re": 0}, {"rdy": 0}),
             ({}, {}),
@@ -71,11 +72,12 @@ class TestSpecial(SimTest, unittest.TestCase):
             ({}, {}),
             ({}, {}),
             ({}, {}),
+            ({}, {}),
             ({}, {"addr": 69, "data": 5, "we": 1}),
             ({}, {"addr": 70, "data": 6, "we": 1}),
-            ({}, {"addr": 71}),
+            ({}, {"addr": 71, "we": 0}),
             ({}, {"addr": 42, "data": 7, "we": 1}),
-            ({}, {"addr": 43}),
+            ({}, {"addr": 43, "we": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)

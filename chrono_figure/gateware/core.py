@@ -11,7 +11,7 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1001
+GATEWARE_VERSION = 1002
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -100,7 +100,7 @@ class ChronoFigureCore(Elaboratable):
             m.d.sync += match_engine.i_reset_match_fifo.eq(0)
 
         # allow "configuration" of program memory
-        m.d.comb += [
+        m.d.sync += [
             ev_prg_wr.addr.eq(self.i_config_addr),
             ev_prg_wr.data.eq(self.i_config),
             ev_prg_wr.en.eq(self.i_config_we & (self.i_config_addr != 0)),
@@ -108,9 +108,14 @@ class ChronoFigureCore(Elaboratable):
             eventuator.i_ctl_pc.eq(self.i_config),
         ]
         with m.If(self.i_config_we & (self.i_config_addr == 0)):
-            m.d.comb += [
+            m.d.sync += [
                 eventuator.i_ctl_start.eq(~self.i_config[-1]),
                 eventuator.i_ctl_stop.eq(self.i_config[-1]),
+            ]
+        with m.Else():
+            m.d.sync += [
+                eventuator.i_ctl_start.eq(0),
+                eventuator.i_ctl_stop.eq(0),
             ]
 
         return m
