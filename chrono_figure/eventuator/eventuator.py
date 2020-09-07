@@ -36,6 +36,7 @@ class Eventuator(Elaboratable):
         self.i_match_info = make_match_info()
         self.i_match_valid = Signal()
         self.o_match_re = Signal()
+        self.o_match_enable = Signal()
 
         # match config access signals
         self.o_match_config = Signal(8)
@@ -52,6 +53,7 @@ class Eventuator(Elaboratable):
         self.spl_imm = ImmediateUnit()
         self.spl_event_fifo = EventFIFOUnit()
         self.spl_match_config = MatcherConfigUnit()
+        self.spl_match_info = MatchInfoUnit()
 
         self.core = EventuatorCore()
         self.alu = ALU(self.spl_alu_frontend)
@@ -68,6 +70,21 @@ class Eventuator(Elaboratable):
                 m.d.comb += getattr(core, name).eq(getattr(self, name))
             elif name.startswith("o_"):
                 m.d.comb += getattr(self, name).eq(getattr(core, name))
+
+        # handle incoming events
+        ctl_start = Signal()
+        ctl_pc = Signal(PC_WIDTH)
+        m.d.comb += [
+            core.i_ctl_start.eq(self.i_ctl_start | ctl_start),
+            core.i_ctl_pc.eq(Mux(self.i_ctl_start, self.i_ctl_pc, ctl_pc)),
+
+            ctl_start.eq(~core.o_ctl_run & self.i_match_valid),
+            ctl_pc.eq(self.i_match_info.match_type << 3),
+            self.o_match_re.eq(ctl_start),
+        ]
+        curr_match_info = make_match_info()
+        with m.If(ctl_start):
+            m.d.sync += Cat(*curr_match_info).eq(Cat(*self.i_match_info))
 
         # wire up all the special units using the generated map
         all_rdata = Const(0, DATA_WIDTH)
@@ -109,6 +126,9 @@ class Eventuator(Elaboratable):
             self.o_match_config_addr.eq(
                 self.spl_match_config.o_match_config_addr),
             self.o_match_config_we.eq(self.spl_match_config.o_match_config_we),
+            # match info
+            Cat(*self.spl_match_info.i_match_info).eq(Cat(*curr_match_info)),
+            self.o_match_enable.eq(self.spl_match_info.o_match_enable),
         ]
 
         # test modify functionality

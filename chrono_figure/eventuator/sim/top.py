@@ -72,7 +72,9 @@ class SimTop(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
-        m.submodules.match_fifo = match_fifo = self.match_fifo
+        enable_match_fifo = Signal()
+        m.submodules.match_fifo = match_fifo = \
+            ResetInserter(~enable_match_fifo)(self.match_fifo)
         m.submodules.event_fifo = event_fifo = self.event_fifo
 
         m.submodules.ev = ev = self.ev
@@ -116,6 +118,10 @@ class SimTop(Elaboratable):
             self.o_event_valid.eq(event_fifo.r_rdy),
             event_fifo.r_en.eq(self.i_event_re),
         ]
+        with m.If(ev.i_ctl_stop):
+            m.d.sync += enable_match_fifo.eq(0)
+        with m.Elif(ev.o_match_enable):
+            m.d.sync += enable_match_fifo.eq(1)
 
         m.d.comb += self.o_clk.eq(ClockSignal())
 

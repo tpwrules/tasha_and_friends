@@ -80,5 +80,95 @@ class TestSpecial(SimTest, unittest.TestCase):
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
+    @cycle_test
+    def test_spl_match_info(self):
+        prg = [
+            # reset code
+            POKE(SplW.TMPA, 100),
+            POKE(SplW.TMPB, 101),
+            POKE(SplW.MATCH_ENABLE, 1),
+            BRANCH(0),
+            BRANCH(0),
+            BRANCH(0),
+            BRANCH(0),
+            # event type 1 code
+            COPY(3, SplR.TMPA),
+            COPY(3, SplR.MATCH_TYPE),
+            COPY(3, SplR.MATCH_CYCLE_COUNT),
+            COPY(3, SplR.MATCH_ADDR),
+            COPY(3, SplR.MATCH_DATA),
+            BRANCH(0),
+            BRANCH(0),
+            BRANCH(0),
+            # event type 2 code
+            COPY(3, SplR.TMPB),
+            COPY(3, SplR.MATCH_TYPE),
+            COPY(3, SplR.MATCH_CYCLE_COUNT),
+            COPY(3, SplR.MATCH_ADDR),
+            COPY(3, SplR.MATCH_DATA),
+            BRANCH(0),
+            BRANCH(0),
+            BRANCH(0),
+        ]
+        sets = {"mt": self.tb.i_match_info.match_type,
+                "mc": self.tb.i_match_info.cycle_count,
+                "ma": self.tb.i_match_info.addr,
+                "md": self.tb.i_match_info.data,
+                "we": self.tb.i_match_we}
+        chks = {"r3": self.tb.reg_mem[3],
+                "pc": self.ev.o_prg_addr}
+        vals = [
+            ({"mt": 1, "mc": 2, "ma": 3, "md": 4, "we": 1}, {"pc": 1}),
+            ({"we": 0}, {"pc": 2}),
+            ({}, {"pc": 3}),
+            ({}, {"pc": 4}),
+            ({}, {"pc": 0}),
+            ({}, {"pc": 0}),
+
+            ({"mt": 1, "mc": 2, "ma": 3, "md": 4, "we": 1}, {"pc": 0}),
+            ({"we": 0}, {"pc": 0}),
+            ({}, {"pc": 8}),
+            ({}, {"pc": 9}),
+            ({}, {"pc": 10}),
+            ({}, {"pc": 11, "r3": 100}),
+            ({}, {"pc": 12, "r3": 1}),
+            ({}, {"pc": 13, "r3": 2}),
+            ({}, {"pc": 0, "r3": 3}),
+            ({}, {"pc": 0, "r3": 4}),
+            ({}, {"pc": 0}),
+
+            ({"mt": 2, "mc": 5, "ma": 6, "md": 7, "we": 1}, {"pc": 0}),
+            ({"we": 0}, {"pc": 0}),
+            ({}, {"pc": 16}),
+            ({}, {"pc": 17}),
+            ({}, {"pc": 18}),
+            ({}, {"pc": 19, "r3": 101}),
+            ({}, {"pc": 20, "r3": 2}),
+            ({}, {"pc": 21, "r3": 5}),
+            ({}, {"pc": 0, "r3": 6}),
+            ({}, {"pc": 0, "r3": 7}),
+            ({}, {"pc": 0}),
+
+            ({"mt": 1, "mc": 2, "ma": 3, "md": 4, "we": 1}, {"pc": 0}),
+            ({"mt": 2, "mc": 5, "ma": 6, "md": 7}, {"pc": 0}),
+            ({"we": 0}, {"pc": 8}),
+            ({}, {"pc": 9}),
+            ({}, {"pc": 10}),
+            ({}, {"pc": 11, "r3": 100}),
+            ({}, {"pc": 12, "r3": 1}),
+            ({}, {"pc": 13, "r3": 2}),
+            ({}, {"pc": 16, "r3": 3}),
+            ({}, {"pc": 17, "r3": 4}),
+            ({}, {"pc": 18}),
+            ({}, {"pc": 19, "r3": 101}),
+            ({}, {"pc": 20, "r3": 2}),
+            ({}, {"pc": 21, "r3": 5}),
+            ({}, {"pc": 0, "r3": 6}),
+            ({}, {"pc": 0, "r3": 7}),
+            ({}, {"pc": 0}),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
 if __name__ == "__main__":
     unittest.main()

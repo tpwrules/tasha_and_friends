@@ -1,5 +1,6 @@
 from nmigen import *
 
+from chrono_figure.gateware.match_engine import make_match_info
 from .isa import *
 
 # stores two temporary values called TMPA and TMPB which can be arbitrarily read
@@ -128,5 +129,38 @@ class MatcherConfigUnit(Elaboratable):
             self.o_match_config.eq(self.i_wdata),
             self.o_match_config_addr.eq(curr_addr),
         ]
+
+        return m
+
+# read out the info of the current match
+class MatchInfoUnit(Elaboratable):
+    def __init__(self):
+        # special bus signals
+        self.i_raddr = Signal(2)
+        self.i_re = Signal()
+        self.o_rdata = Signal(DATA_WIDTH)
+        self.i_waddr = Signal(2)
+        self.i_we = Signal()
+        self.i_wdata = Signal(DATA_WIDTH)
+
+        self.i_match_info = make_match_info()
+        self.o_match_enable = Signal()
+
+    def elaborate(self, platform):
+        m = Module()
+
+        with m.If(self.i_we):
+            # only one thing to write, so ignore the address
+            m.d.comb += self.o_match_enable.eq(1)
+
+        with m.Switch(self.i_waddr):
+            with m.Case(SplR.MATCH_TYPE_OFFSET):
+                m.d.comb += self.o_rdata.eq(self.i_match_info.match_type)
+            with m.Case(SplR.MATCH_CYCLE_COUNT_OFFSET):
+                m.d.comb += self.o_rdata.eq(self.i_match_info.cycle_count)
+            with m.Case(SplR.MATCH_ADDR_OFFSET):
+                m.d.comb += self.o_rdata.eq(self.i_match_info.addr)
+            with m.Case(SplR.MATCH_DATA_OFFSET):
+                m.d.comb += self.o_rdata.eq(self.i_match_info.data)
 
         return m

@@ -104,5 +104,6 @@ if __name__ == "__main__":
     from .test_core import TestCore
     from .test_exec import TestExecution
     from .test_spl import TestSpecial
+    from .test_alu import TestALU
 
     unittest.main()

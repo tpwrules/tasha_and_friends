@@ -54,6 +54,17 @@ special_map = {
             ("MATCH_CONFIG_DATA", 1, "w"),
         ),
     },
+
+    "spl_match_info": {
+        "width": 2,
+        "regs": (
+            ("MATCH_TYPE", 0, "r"),
+            ("MATCH_CYCLE_COUNT", 1, "r"),
+            ("MATCH_ADDR", 2, "r"),
+            ("MATCH_DATA", 3, "r"),
+            ("MATCH_ENABLE", 0, "w"),
+        ),
+    },
 }
 
 # validate the units and calculate the base addresses
