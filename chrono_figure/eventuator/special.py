@@ -97,3 +97,36 @@ class EventFIFOUnit(Elaboratable):
         ]
 
         return m
+
+# configures the matchers (including auto-increment function!)
+class MatcherConfigUnit(Elaboratable):
+    def __init__(self):
+        # special bus signals
+        self.i_raddr = Signal(1)
+        self.i_re = Signal()
+        self.o_rdata = Signal(DATA_WIDTH)
+        self.i_waddr = Signal(1)
+        self.i_we = Signal()
+        self.i_wdata = Signal(DATA_WIDTH)
+
+        self.o_match_config = Signal(8)
+        self.o_match_config_addr = Signal(10)
+        self.o_match_config_we = Signal()
+
+    def elaborate(self, platform):
+        m = Module()
+
+        curr_addr = Signal(10)
+        with m.If(self.i_we):
+            with m.If(self.i_waddr == SplW.MATCH_CONFIG_ADDR_OFFSET):
+                m.d.sync += curr_addr.eq(self.i_wdata)
+            with m.Elif(self.i_waddr == SplW.MATCH_CONFIG_DATA_OFFSET):
+                m.d.comb += self.o_match_config_we.eq(1)
+                m.d.sync += curr_addr.eq(curr_addr + 1)
+
+        m.d.comb += [
+            self.o_match_config.eq(self.i_wdata),
+            self.o_match_config_addr.eq(curr_addr),
+        ]
+
+        return m

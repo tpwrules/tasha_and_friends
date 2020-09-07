@@ -38,8 +38,8 @@ class Eventuator(Elaboratable):
         self.o_match_re = Signal()
 
         # match config access signals
-        self.o_match_config = Signal(32)
-        self.o_match_config_addr = Signal(8)
+        self.o_match_config = Signal(8)
+        self.o_match_config_addr = Signal(10)
         self.o_match_config_we = Signal()
 
         # event data fifo signals
@@ -51,6 +51,7 @@ class Eventuator(Elaboratable):
         self.spl_temp = TemporaryUnit()
         self.spl_imm = ImmediateUnit()
         self.spl_event_fifo = EventFIFOUnit()
+        self.spl_match_config = MatcherConfigUnit()
 
         self.core = EventuatorCore()
         self.alu = ALU(self.spl_alu_frontend)
@@ -94,17 +95,20 @@ class Eventuator(Elaboratable):
 
         m.d.comb += self.core.i_spl_rdata.eq(all_rdata)
 
-        # hook up ALU
+        # hook up the other special unit connections
         m.d.comb += [
+            # ALU
             alu.i_mod_type.eq(core.o_mod_type[:6]),
             alu.i_mod_data.eq(core.o_mod_data),
             core.i_flags.eq(alu.o_flags),
-        ]
-
-        # hook up event FIFO
-        m.d.comb += [
+            # event FIFO
             self.o_event.eq(self.spl_event_fifo.o_event),
             self.o_event_we.eq(self.spl_event_fifo.o_event_we),
+            # matcher config
+            self.o_match_config.eq(self.spl_match_config.o_match_config),
+            self.o_match_config_addr.eq(
+                self.spl_match_config.o_match_config_addr),
+            self.o_match_config_we.eq(self.spl_match_config.o_match_config_we),
         ]
 
         # test modify functionality

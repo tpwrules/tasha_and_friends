@@ -46,6 +46,14 @@ special_map = {
             ("EVENT_FIFO", 0, "w"),
         ),
     },
+
+    "spl_match_config": {
+        "width": 1,
+        "regs": (
+            ("MATCH_CONFIG_ADDR", 0, "w"),
+            ("MATCH_CONFIG_DATA", 1, "w"),
+        ),
+    },
 }
 
 # validate the units and calculate the base addresses
