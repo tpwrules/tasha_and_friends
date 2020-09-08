@@ -132,12 +132,16 @@ class Eventuator(Elaboratable):
         ]
 
         # test modify functionality
-        with m.If(core.o_mod_type == Mod.COPY):
-            m.d.comb += core.i_mod_data.eq(core.o_mod_data)
-        with m.Elif(core.o_mod_type & 0xC0 == 0xC0):
+        with m.If(core.o_mod_type & 0xC0 == 0xC0):
             m.d.comb += [
-                core.i_mod_data.eq(alu.o_mod_data),
                 alu.i_mod.eq(core.o_mod),
+                core.i_mod_data.eq(alu.o_mod_data),
+                core.i_do_mod.eq(alu.o_do_mod),
+            ]
+        with m.Else():
+            m.d.comb += [
+                core.i_mod_data.eq(core.o_mod_data),
+                core.i_do_mod.eq(1),
             ]
 
         return m

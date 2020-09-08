@@ -188,7 +188,7 @@ class TestCore(SimCoreTest, unittest.TestCase):
             MODIFY(Mod.COPY, 2),
             MODIFY(Mod.COPY, 3),
         ]
-        sets = {}
+        sets = {"do": self.core.i_do_mod}
         chks = {"rraddr": self.core.o_reg_raddr,
                 "rwaddr": self.core.o_reg_waddr,
                 "rre": self.core.o_reg_re,
@@ -197,18 +197,18 @@ class TestCore(SimCoreTest, unittest.TestCase):
                 "type": self.core.o_mod_type}
         vals = [
             # program is starting
-            ({}, {"rre": 0, "rwe": 0, "mod": 0}),
+            ({"do": 1}, {"rre": 0, "rwe": 0, "mod": 0}),
             # decoding the first MODIFY and reading its register
             ({}, {"rre": 1, "rwe": 0, "mod": 0,
                   "rraddr": 1}),
             # doing the modification and writing it back
             ({}, {"rre": 1, "rwe": 1, "mod": 1,
                   "rraddr": 2, "rwaddr": 1, "type": Mod.COPY}),
-            # again
-            ({}, {"rre": 1, "rwe": 1, "mod": 1,
+            # again (but don't actually do it this time)
+            ({"do": 0}, {"rre": 1, "rwe": 0, "mod": 1,
                   "rraddr": 3, "rwaddr": 2, "type": Mod.COPY}),
             # modifying the last register
-            ({}, {"rre": 0, "rwe": 1, "mod": 1,
+            ({"do": 1}, {"rre": 0, "rwe": 1, "mod": 1,
                   "rwaddr": 3, "type": Mod.COPY}),
             # program stopped, no more activity
             ({}, {"rre": 0, "rwe": 0, "mod": 0}),
@@ -231,7 +231,7 @@ class TestCore(SimCoreTest, unittest.TestCase):
             MODIFY(Mod.COPY, 6),
             BRANCH(4),
         ]
-        sets = {}
+        sets = {"do": self.core.i_do_mod}
         chks = {"rraddr": self.core.o_reg_raddr,
                 "rwaddr": self.core.o_reg_waddr,
                 "rre": self.core.o_reg_re,
@@ -245,7 +245,7 @@ class TestCore(SimCoreTest, unittest.TestCase):
                 "type": self.core.o_mod_type}
         vals = [
             # program is starting
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({"do": 1}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
             # fetch: MODIFY
             ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
                   "rraddr": 1}),

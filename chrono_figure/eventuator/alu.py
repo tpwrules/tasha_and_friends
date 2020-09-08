@@ -94,6 +94,7 @@ class ALU(Elaboratable):
         self.i_mod = Signal()
         self.i_mod_type = Signal(6)
         self.i_mod_data = Signal(DATA_WIDTH)
+        self.o_do_mod = Signal()
         self.o_mod_data = Signal(DATA_WIDTH)
 
         # ALU flag manager unit
@@ -161,7 +162,8 @@ class ALU(Elaboratable):
         # handle ALU results
         alu_flags = Signal(4)
         m.d.comb += [
-            self.o_mod_data.eq(Mux(store_result, core.o_o, self.i_mod_data)),
+            self.o_mod_data.eq(core.o_o),
+            self.o_do_mod.eq(store_result),
             alu_flags[Flags.Z].eq(core.o_z),
             alu_flags[Flags.S].eq(core.o_s),
             alu_flags[Flags.C].eq(core.o_c),

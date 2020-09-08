@@ -103,6 +103,7 @@ class EventuatorCore(Elaboratable):
         self.o_mod = Signal() # enable modification
         self.o_mod_type = Signal(8)
         self.o_mod_data = Signal(DATA_WIDTH) # data to be modified
+        self.i_do_mod = Signal() # if modified data should be stored
         self.i_mod_data = Signal(DATA_WIDTH) # modified data returned
 
         self.i_flags = Signal(4) # ALU flags to control branches
@@ -240,7 +241,7 @@ class EventuatorCore(Elaboratable):
             with m.Case(InsnCode.MODIFY):
                 m.d.comb += [
                     self.o_mod.eq(1),
-                    self.o_reg_we.eq(1),
+                    self.o_reg_we.eq(self.i_do_mod),
                     self.o_reg_wdata.eq(self.i_mod_data),
                 ]
 

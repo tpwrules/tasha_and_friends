@@ -11,7 +11,7 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1002
+GATEWARE_VERSION = 1003
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
