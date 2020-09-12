@@ -35,7 +35,9 @@ class BaseSimTest:
         to_assert = []
         def proc():
             cycle = 1 # cycle 0 is used to load the program
-            for set_vals, chk_vals in vals:
+            for vv in vals:
+                if len(vv) == 0: vv = ({}, {})
+                set_vals, chk_vals = vv
                 for n, v in set_vals.items(): # set the set values
                     yield sets[n].eq(v)
                 yield Settle() # wait for everything to propagate
