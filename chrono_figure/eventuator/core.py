@@ -18,8 +18,12 @@ class ProgramControl(Elaboratable):
         self.o_prg_addr = Signal(PC_WIDTH) # what instruction to read next
         self.i_prg_data = Signal(INSN_WIDTH) # the read instruction
 
-        self.o_fetch_insn = Signal(INSN_WIDTH) # insn that was just fetched
-        self.o_fetch_addr = Signal(PC_WIDTH) # its address (for debugging)
+        # instruction for read and write cycles. they are the same value, but
+        # the right one needs to be used to avoid timing problems
+        self.o_cyc_rd_insn = Signal(INSN_WIDTH)
+        self.o_cyc_wr_insn = Signal(INSN_WIDTH)
+        self.o_fetch_addr = Signal(PC_WIDTH) # insn's address (for debugging)
+
         self.o_cyc_rd = Signal() # if we are on the read cycle (with a new insn)
         self.o_cyc_wr = Signal() # if we are on the write cycle
 
@@ -44,11 +48,11 @@ class ProgramControl(Elaboratable):
         next_pc = Signal(PC_WIDTH)
         curr_insn = Signal(INSN_WIDTH)
         with m.If(cyc_rd):
-            m.d.comb += self.o_fetch_insn.eq(self.i_prg_data)
+            m.d.comb += self.o_cyc_rd_insn.eq(self.i_prg_data)
             m.d.sync += curr_insn.eq(self.i_prg_data)
             m.d.sync += curr_pc.eq(curr_pc+1)
         with m.Elif(cyc_wr):
-            m.d.comb += self.o_fetch_insn.eq(curr_insn)
+            m.d.comb += self.o_cyc_wr_insn.eq(curr_insn)
             m.d.comb += self.o_prg_addr.eq(next_pc)
             m.d.sync += curr_pc.eq(next_pc)
 
@@ -104,9 +108,6 @@ class EventuatorCore(Elaboratable):
         self.i_ctl_pc = Signal(PC_WIDTH)
         self.o_ctl_run = Signal() # currently running
         self.i_ctl_stop = Signal() # stop execution now
-        # branching to address 0 deasserts run that cycle. if start is asserted,
-        # the branch goes to the given PC instead and run is asserted next
-        # cycle. asserting stop forces a branch to address 0 that cycle.
         
         # program memory access signals
         # (read is always enabled, even when stopped)
@@ -161,36 +162,44 @@ class EventuatorCore(Elaboratable):
             cyc_wr.eq(prg_ctl.o_cyc_wr)
         ]
 
-        # instruction we are working on
-        curr_insn = Signal(INSN_WIDTH)
-        m.d.comb += curr_insn.eq(prg_ctl.o_fetch_insn)
+        # instruction we are working on. they are both the same value but the
+        # correct one needs to be used to prevent timing problems.
+        cyc_rd_insn = Signal(INSN_WIDTH)
+        cyc_wr_insn = Signal(INSN_WIDTH)
+        m.d.comb += [
+            cyc_rd_insn.eq(prg_ctl.o_cyc_rd_insn),
+            cyc_wr_insn.eq(prg_ctl.o_cyc_wr_insn),
+        ]
         # instruction field selection
         # branch target for BRANCH
-        insn_target = curr_insn[:PC_WIDTH]
+        cyc_wr_target = cyc_wr_insn[:PC_WIDTH]
         # branch condition for BRANCH
-        insn_cond = curr_insn[PC_WIDTH:PC_WIDTH+COND_WIDTH]
+        cyc_wr_cond = cyc_wr_insn[PC_WIDTH:PC_WIDTH+COND_WIDTH]
         # selection bit; sign for POKE or direction for COPY
-        insn_sel = curr_insn[15]
+        cyc_rd_sel = cyc_rd_insn[15]
+        cyc_wr_sel = cyc_wr_insn[15]
         # poke value for POKE
-        insn_val = curr_insn[:8]
+        cyc_wr_val = cyc_wr_insn[:8]
         # register number for COPY and MODIFY
-        insn_reg = curr_insn[:8]
+        cyc_rd_reg = cyc_rd_insn[:8]
+        cyc_wr_reg = cyc_wr_insn[:8]
         # special register number for COPY and POKE
-        insn_spl = curr_insn[8:15]
+        cyc_rd_spl = cyc_rd_insn[8:15]
+        cyc_wr_spl = cyc_wr_insn[8:15]
         # modification type for MODIFY
-        insn_mod = curr_insn[8:16]
+        cyc_wr_mod = cyc_wr_insn[8:16]
 
         # fixed purpose instruction fields
         m.d.comb += [
-            prg_ctl.i_branch_target.eq(insn_target),
-            self.o_reg_raddr.eq(insn_reg),
-            self.o_spl_raddr.eq(insn_spl),
-            self.o_spl_waddr.eq(insn_spl),
-            self.o_mod_type.eq(insn_mod),
+            prg_ctl.i_branch_target.eq(cyc_wr_target),
+            self.o_reg_raddr.eq(cyc_rd_reg),
+            self.o_spl_raddr.eq(cyc_rd_spl),
+            self.o_spl_waddr.eq(cyc_wr_spl),
+            self.o_mod_type.eq(cyc_wr_mod),
         ]
 
         m.d.sync += [
-            self.o_reg_waddr.eq(insn_reg),
+            self.o_reg_waddr.eq(cyc_wr_reg),
             self.o_reg_we.eq(0),
         ]
 
@@ -210,12 +219,26 @@ class EventuatorCore(Elaboratable):
             self.o_mod_data.eq(reg_rdata),
         ]
 
-        # decode and execute the instruction
-        with m.Switch(Cat(curr_insn[16:], cyc_rd)):
-            with m.Case(InsnCode.BRANCH+4): # read cycle
+        # process instruction read cycle
+        with m.Switch(Cat(cyc_rd_insn[16:], ~cyc_rd)):
+            with m.Case(InsnCode.BRANCH):
                 pass
 
-            with m.Case(InsnCode.BRANCH+0): # write cycle
+            with m.Case(InsnCode.COPY):
+                with m.If(cyc_rd_sel): # regular -> special
+                    m.d.comb += self.o_reg_re.eq(1)
+                with m.Else(): # special -> regular
+                    m.d.comb += self.o_spl_re.eq(1)
+
+            with m.Case(InsnCode.POKE):
+                pass
+
+            with m.Case(InsnCode.MODIFY):
+                m.d.comb += self.o_reg_re.eq(1)
+
+        # process instruction write cycle
+        with m.Switch(Cat(cyc_wr_insn[16:], ~cyc_wr)):
+            with m.Case(InsnCode.BRANCH):
                 f = self.i_flags
                 branches = {
                     Cond.ALWAYS: 1,
@@ -228,22 +251,16 @@ class EventuatorCore(Elaboratable):
                     Cond.V1: f[Flags.V],
                 }
                 should_branch = Signal()
-                with m.Switch(insn_cond[1:]):
+                with m.Switch(cyc_wr_cond[1:]):
                     for cond_num, cond in branches.items():
                         with m.Case(cond_num >> 1): # low bit inverts branch
                             m.d.comb += should_branch.eq(cond)
                 del f, branches
 
-                m.d.comb += prg_ctl.i_branch.eq(should_branch ^ insn_cond[0])
+                m.d.comb += prg_ctl.i_branch.eq(should_branch ^ cyc_wr_cond[0])
 
-            with m.Case(InsnCode.COPY+4): # read cycle
-                with m.If(insn_sel): # regular -> special
-                    m.d.comb += self.o_reg_re.eq(1)
-                with m.Else(): # special -> regular
-                    m.d.comb += self.o_spl_re.eq(1)
-
-            with m.Case(InsnCode.COPY+0): # write cycle
-                with m.If(insn_sel): # regular -> special
+            with m.Case(InsnCode.COPY):
+                with m.If(cyc_wr_sel): # regular -> special
                     m.d.comb += [
                         self.o_spl_we.eq(1),
                         self.o_spl_wdata.eq(reg_rdata),
@@ -254,19 +271,13 @@ class EventuatorCore(Elaboratable):
                         self.o_reg_wdata.eq(self.i_spl_rdata),
                     ]
 
-            with m.Case(InsnCode.POKE+4): # read cycle
-                pass
-
-            with m.Case(InsnCode.POKE+0): # write cycle
+            with m.Case(InsnCode.POKE):
                 m.d.comb += [
                     self.o_spl_we.eq(1),
-                    self.o_spl_wdata.eq(Cat(insn_val, Repl(insn_sel, 24))),
+                    self.o_spl_wdata.eq(Cat(cyc_wr_val, Repl(cyc_wr_sel, 24))),
                 ]
 
-            with m.Case(InsnCode.MODIFY+4): # read cycle
-                m.d.comb += self.o_reg_re.eq(1)
-
-            with m.Case(InsnCode.MODIFY+0): # write cycle
+            with m.Case(InsnCode.MODIFY):
                 m.d.comb += self.o_mod.eq(1)
                 m.d.sync += [
                     self.o_reg_we.eq(self.i_do_mod),
