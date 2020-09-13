@@ -63,10 +63,12 @@ class ProgramControl(Elaboratable):
         m.d.sync += stopped.eq(stopping | stopped)
 
         was_start = Signal()
+        start_pc = Signal(PC_WIDTH)
         was_stop = Signal()
         m.d.sync += [
             was_start.eq(self.i_ctl_start),
             was_stop.eq(self.i_ctl_stop),
+            start_pc.eq(self.i_ctl_pc),
         ]
         do_start = Signal()
         do_stop = Signal()
@@ -80,7 +82,7 @@ class ProgramControl(Elaboratable):
             # are we being asked to start?
             with m.If(stopping & do_start):
                 # yes, set the PC to the new value and start again
-                m.d.comb += next_pc.eq(self.i_ctl_pc)
+                m.d.comb += next_pc.eq(Mux(was_start, start_pc, self.i_ctl_pc))
                 m.d.sync += stopped.eq(0)
             with m.Elif(do_stop): # do we want to stop?
                 # yes, go to the stop address
@@ -186,10 +188,11 @@ class EventuatorCore(Elaboratable):
             self.o_spl_raddr.eq(insn_spl),
             self.o_spl_waddr.eq(insn_spl),
             self.o_mod_type.eq(insn_mod),
+            self.o_mod_data.eq(self.i_reg_rdata),
         ]
 
         # decode and execute the instruction
-        with m.Switch(Cat(cyc_rd, curr_insn[16:])):
+        with m.Switch(Cat(curr_insn[16:], cyc_rd)):
             with m.Case(InsnCode.BRANCH+4): # read cycle
                 pass
 
@@ -243,10 +246,10 @@ class EventuatorCore(Elaboratable):
 
             with m.Case(InsnCode.MODIFY+4): # read cycle
                 m.d.comb += self.o_reg_re.eq(1)
-                m.d.comb += self.o_mod.eq(1),
 
             with m.Case(InsnCode.MODIFY+0): # write cycle
                 m.d.comb += [
+                    self.o_mod.eq(1),
                     self.o_reg_we.eq(self.i_do_mod),
                     self.o_reg_wdata.eq(self.i_mod_data),
                 ]

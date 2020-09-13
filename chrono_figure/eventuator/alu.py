@@ -35,7 +35,7 @@ class FlagManager(Elaboratable):
         curr_flags = Signal(4)
         new_flags = Signal(4)
         m.d.sync += curr_flags.eq(new_flags)
-        m.d.comb += self.o_flags.eq(new_flags)
+        m.d.comb += self.o_flags.eq(curr_flags)
 
         for flag in Flags:
             with m.If(self.i_flag_set[flag]):

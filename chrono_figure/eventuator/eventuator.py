@@ -73,12 +73,18 @@ class Eventuator(Elaboratable):
 
         # handle incoming events
         ctl_start = Signal()
+        # if we try to start the processor on a read cycle, it won't actually
+        # start til the following read cycle. we will think it's stopped so
+        # we will read the match FIFO again and drop a match. to stop this, we
+        # don't start the processor if we already started it last cycle
+        did_start = Signal()
+        m.d.sync += did_start.eq(ctl_start)
         ctl_pc = Signal(PC_WIDTH)
         m.d.comb += [
             core.i_ctl_start.eq(self.i_ctl_start | ctl_start),
             core.i_ctl_pc.eq(Mux(self.i_ctl_start, self.i_ctl_pc, ctl_pc)),
 
-            ctl_start.eq(~core.o_ctl_run & self.i_match_valid),
+            ctl_start.eq(~core.o_ctl_run & self.i_match_valid & ~did_start),
             ctl_pc.eq(self.i_match_info.match_type << 3),
             self.o_match_re.eq(ctl_start),
         ]

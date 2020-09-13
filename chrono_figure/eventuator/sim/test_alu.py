@@ -28,11 +28,11 @@ class TestALU(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
         vals = [
-            *[({}, {})]*6,
-            ({}, {}), ({}, {"r3": 69}),
-            ({}, {}), ({}, {"r3": 70}),
-            ({}, {}), ({}, {"r3": 71}),
-            ({}, {}), ({}, {"r3": 72}),
+            *[()]*9,
+            (), (), ({}, {"r3": 69}), (),
+            (), (), ({}, {"r3": 70}), (),
+            (), (), ({}, {"r3": 71}), (),
+            (), (), ({}, {"r3": 72}), (),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -56,17 +56,17 @@ class TestALU(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
         vals = [
-            *[({}, {})]*5,
-            ({}, {}), ({}, {"r3": 69 & 43}),
-            ({}, {}), ({}, {"r3": 69 | 43}),
-            ({}, {}), ({}, {"r3": 69 ^ 43}),
-            ({}, {}), ({}, {"r3": 69 + 43}),
-            ({}, {}), ({}, {"r3": 69 - 43}),
+            *[()]*7,
+            (), (), ({}, {"r3": 69 & 43}), (),
+            (), (), ({}, {"r3": 69 | 43}), (),
+            (), (), ({}, {"r3": 69 ^ 43}), (),
+            (), (), ({}, {"r3": 69 + 43}), (),
+            (), (), ({}, {"r3": 69 - 43}), (),
 
-            ({}, {}), ({}, {"r3": 69 << 1}),
-            ({}, {}), ({}, {"r3": 69 >> 1}),
-            ({}, {}), ({}, {"r3": 69 << 1}),
-            ({}, {}), ({}, {"r3": (69 >> 1) | 0x80000000}),
+            (), (), ({}, {"r3": 69 << 1}), (),
+            (), (), ({}, {"r3": 69 >> 1}), (),
+            (), (), ({}, {"r3": 69 << 1}), (),
+            (), (), ({}, {"r3": (69 >> 1) | 0x80000000}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -96,16 +96,16 @@ class TestALU(SimTest, unittest.TestCase):
         vals = []
         pc = 0
         for a, b, *conds in tests:
-            vals.append(({"r3": a, "b0": b}, {"pc": pc}))
+            vals.extend(((({"r3": a, "b0": b}, {"pc": pc})), ()))
             prg.append(MODIFY(Mod.CMP_B0, 3))
             pc += 1
             for cond in conds:
                 prg.append(BRANCH(0, Cond(cond ^ 1)))
-                vals.append(({}, {"pc": pc}))
+                vals.extend(((({}, {"pc": pc})), ()))
                 pc += 1
-        vals.append(({}, {"pc": pc}))
-        vals.append(({}, {"pc": pc+1}))
-        vals.append(({}, {"pc": 0}))
+        vals.extend(((({}, {"pc": pc})), ()))
+        vals.extend(((({}, {"pc": pc+1})), ()))
+        vals.extend(((({}, {"pc": 0})), ()))
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
@@ -128,15 +128,15 @@ class TestALU(SimTest, unittest.TestCase):
         sets = {}
         chks = {"vcsz": self.core.i_flags}
         vals = [
-            ({}, {}), ({}, {}),
-            ({}, {"vcsz": 0b0000}),
-            ({}, {"vcsz": 0b0101}),
-            ({}, {"vcsz": 0b1111}),
-            ({}, {"vcsz": 0b1111}),
-            ({}, {}), ({}, {}),
-            ({}, {"vcsz": 0b0000}),
-            ({}, {"vcsz": 0b0101}),
-            ({}, {"vcsz": 0b0000}),
+            (), (), (),
+            ({}, {"vcsz": 0b0000}), (),
+            ({}, {"vcsz": 0b0101}), (),
+            ({}, {"vcsz": 0b1111}), (),
+            ({}, {"vcsz": 0b1111}), (),
+            (), (), (), (),
+            ({}, {"vcsz": 0b0000}), (),
+            ({}, {"vcsz": 0b0101}), (),
+            ({}, {"vcsz": 0b0000}), (),
             ({}, {"vcsz": 0b0000}),
         ]
 

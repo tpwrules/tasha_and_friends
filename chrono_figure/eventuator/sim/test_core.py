@@ -26,16 +26,16 @@ class TestCore(SimCoreTest, unittest.TestCase):
         vals = [
             # make sure all the branches get followed
             ({}, {"pc": 0}),
-            ({}, {"pc": 1}),
-            ({}, {"pc": 6}),
-            ({}, {"pc": 5}),
-            ({}, {"pc": 4}),
-            ({}, {"pc": 2}),
-            ({}, {"pc": 1}),
-            ({}, {"pc": 6}),
-            ({}, {"pc": 5}),
-            ({}, {"pc": 4}),
-            ({}, {"pc": 2}),
+            ({}, {"pc": 1}), ({}, {"pc": 1}),
+            ({}, {"pc": 6}), ({}, {"pc": 6}),
+            ({}, {"pc": 5}), ({}, {"pc": 5}),
+            ({}, {"pc": 4}), ({}, {"pc": 4}),
+            ({}, {"pc": 2}), ({}, {"pc": 2}),
+            ({}, {"pc": 1}), ({}, {"pc": 1}),
+            ({}, {"pc": 6}), ({}, {"pc": 6}),
+            ({}, {"pc": 5}), ({}, {"pc": 5}),
+            ({}, {"pc": 4}), ({}, {"pc": 4}),
+            ({}, {"pc": 2}), ({}, {"pc": 2}),
             # and so on
         ]
 
@@ -63,21 +63,21 @@ class TestCore(SimCoreTest, unittest.TestCase):
         chks = {"pc": self.core.prg_ctl.o_fetch_addr}
         vals = [
             ({},               {"pc": 0}),
-            ({"vcsz": 0b0001}, {"pc": 1}),
-            ({"vcsz": 0b0100}, {"pc": 2}),
-            ({"vcsz": 0b1000}, {"pc": 3}),
-            ({"vcsz": 0b0000}, {"pc": 4}),
-            ({"vcsz": 0b0010}, {"pc": 5}),
-            ({"vcsz": 0b0000}, {"pc": 6}),
-            ({"vcsz": 0b0001}, {"pc": 7}),
-            ({"vcsz": 0b0000}, {"pc": 8}),
-            ({"vcsz": 0b0010}, {"pc": 9}),
-            ({"vcsz": 0b0000}, {"pc": 10}),
-            ({"vcsz": 0b0100}, {"pc": 11}),
-            ({"vcsz": 0b0000}, {"pc": 12}),
-            ({"vcsz": 0b1000}, {"pc": 13}),
-            ({"vcsz": 0b0000}, {"pc": 14}),
-            ({"vcsz": 0b0000}, {"pc": 15}),
+            ({"vcsz": 0b0001}, {"pc": 1}), (),
+            ({"vcsz": 0b0100}, {"pc": 2}), (),
+            ({"vcsz": 0b1000}, {"pc": 3}), (),
+            ({"vcsz": 0b0000}, {"pc": 4}), (),
+            ({"vcsz": 0b0010}, {"pc": 5}), (),
+            ({"vcsz": 0b0000}, {"pc": 6}), (),
+            ({"vcsz": 0b0001}, {"pc": 7}), (),
+            ({"vcsz": 0b0000}, {"pc": 8}), (),
+            ({"vcsz": 0b0010}, {"pc": 9}), (),
+            ({"vcsz": 0b0000}, {"pc": 10}), (),
+            ({"vcsz": 0b0100}, {"pc": 11}), (),
+            ({"vcsz": 0b0000}, {"pc": 12}), (),
+            ({"vcsz": 0b1000}, {"pc": 13}), (),
+            ({"vcsz": 0b0000}, {"pc": 14}), (),
+            ({"vcsz": 0b0000}, {"pc": 15}), (),
             ({"vcsz": 0b0000}, {"pc": 0}),
         ]
 
@@ -100,18 +100,16 @@ class TestCore(SimCoreTest, unittest.TestCase):
         vals = [
             # program is starting
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
-            # decoding the first COPY and reading from the regular reg
-            ({}, {"sre": 0, "swe": 0, "rre": 1, "rwe": 0,
-                  "rraddr": 1}),
-            # writing the value to the special register and decoding the next
-            ({}, {"sre": 0, "swe": 1, "rre": 1, "rwe": 0,
-                  "swaddr": SplW.TMPA, "rraddr": 2}),
-            # again
-            ({}, {"sre": 0, "swe": 1, "rre": 1, "rwe": 0,
-                  "swaddr": SplW.TMPB, "rraddr": 3}),
-            # writing the last value to the special register
-            ({}, {"sre": 0, "swe": 1, "rre": 0, "rwe": 0,
-                  "swaddr": SplW.TMPA}),
+            # first COPY reads from the regular reg
+            ({}, {"rre": 1, "rwe": 0, "rraddr": 1}),
+            # then writes what it got to the special reg
+            ({}, {"sre": 0, "swe": 1, "swaddr": SplW.TMPA,}),
+            # now try it once more
+            ({}, {"rre": 1, "rwe": 0, "rraddr": 2}),
+            ({}, {"sre": 0, "swe": 1, "swaddr": SplW.TMPB,}),
+            # and again to be sure
+            ({}, {"rre": 1, "rwe": 0, "rraddr": 3}),
+            ({}, {"sre": 0, "swe": 1, "swaddr": SplW.TMPA,}),
             # program stopped, no more activity
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
         ]
@@ -135,18 +133,16 @@ class TestCore(SimCoreTest, unittest.TestCase):
         vals = [
             # program is starting
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
-            # decoding the first COPY and reading from the special reg
-            ({}, {"sre": 1, "swe": 0, "rre": 0, "rwe": 0,
-                  "sraddr": SplR.TMPB}),
-            # writing the value to the regular register and decoding the next
-            ({}, {"sre": 1, "swe": 0, "rre": 0, "rwe": 1,
-                  "sraddr": SplR.TMPA, "rwaddr": 1}),
-            # again
-            ({}, {"sre": 1, "swe": 0, "rre": 0, "rwe": 1,
-                  "sraddr": SplR.TMPB, "rwaddr": 2}),
-            # writing the last value to the regular register
-            ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 1,
-                  "rwaddr": 3}),
+            # first COPY reads from the special reg
+            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,}),
+            # then writes what it got to the special reg
+            ({}, {"rre": 0, "rwe": 1, "rwaddr": 1}),
+            # now try it once more
+            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPA,}),
+            ({}, {"rre": 0, "rwe": 1, "rwaddr": 2}),
+            # and again to be sure
+            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,}),
+            ({}, {"rre": 0, "rwe": 1, "rwaddr": 3}),
             # program stopped, no more activity
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
         ]
@@ -169,11 +165,13 @@ class TestCore(SimCoreTest, unittest.TestCase):
             ({}, {"swe": 0}),
             # decoding the first POKE: nothing til next cycle
             ({}, {"swe": 0}),
-            # poking the value to the special register
+            # now we have the data to POKE
             ({}, {"swe": 1, "swaddr": SplW.TMPA, "swdata": 0xFFFFFF00}),
-            # again
+            # try to POKE somewhere else
+            ({}, {"swe": 0}),
             ({}, {"swe": 1, "swaddr": SplW.TMPB, "swdata": 4}),
-            # poking the last value
+            # POKE the last value
+            ({}, {"swe": 0}),
             ({}, {"swe": 1, "swaddr": SplW.TMPA, "swdata": 27}),
             # program stopped, no more activity
             ({}, {"swe": 0}),
@@ -198,20 +196,16 @@ class TestCore(SimCoreTest, unittest.TestCase):
         vals = [
             # program is starting
             ({"do": 1}, {"rre": 0, "rwe": 0, "mod": 0}),
-            # decoding the first MODIFY and reading its register
-            ({}, {"rre": 1, "rwe": 0, "mod": 0,
-                  "rraddr": 1}),
-            # doing the modification and writing it back
-            ({}, {"rre": 1, "rwe": 1, "mod": 1,
-                  "rraddr": 2, "rwaddr": 1, "type": Mod.COPY}),
-            # again (but don't actually do it this time)
-            ({"do": 0}, {"rre": 1, "rwe": 0, "mod": 1,
-                  "rraddr": 3, "rwaddr": 2, "type": Mod.COPY}),
-            # modifying the last register
-            ({"do": 1}, {"rre": 0, "rwe": 1, "mod": 1,
-                  "rwaddr": 3, "type": Mod.COPY}),
-            # program stopped, no more activity
-            ({}, {"rre": 0, "rwe": 0, "mod": 0}),
+            # first MODIFY reads from the register
+            ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 1}),
+            # then it does the modification and writes it back
+            ({}, {"rre": 0, "rwe": 1, "mod": 1, "rwaddr": 1, "type": Mod.COPY}),
+            # try to MODIFY something else
+            ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 2}),
+            ({}, {"rre": 0, "rwe": 1, "mod": 1, "rwaddr": 2, "type": Mod.COPY}),
+            # and again so we are certain
+            ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 3}),
+            ({}, {"rre": 0, "rwe": 1, "mod": 1, "rwaddr": 3, "type": Mod.COPY}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -246,29 +240,38 @@ class TestCore(SimCoreTest, unittest.TestCase):
         vals = [
             # program is starting
             ({"do": 1}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            # fetch: MODIFY
+            # MODIFY
             ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
                   "rraddr": 1}),
-            # fetch: COPY, exec: MODIFY
-            ({}, {"rre": 1, "rwe": 1, "sre": 0, "swe": 0, "mod": 1,
-                  "rraddr": 2, "rwaddr": 1, "type": Mod.COPY}),
-            # fetch: BRANCH, exec: COPY
+            ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 1,
+                  "rwaddr": 1, "type": Mod.COPY}),
+            # COPY
+            ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
+                  "rraddr": 2}),
             ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
                   "swaddr": SplW.TMPA}),
-            # fetch: POKE, exec: BRANCH
+            # BRANCH
             ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            # fetch: MODIFY, exec: POKE
-            ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
-                  "rraddr": 6, "swaddr": SplW.TMPA, "swdata": 5}),
-            # fetch: BRANCH, exec: MODIFY
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            # POKE
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
+                  "swaddr": SplW.TMPA, "swdata": 5}),
+            # MODIFY
+            ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
+                  "rraddr": 6}),
             ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 1,
                   "rwaddr": 6, "type": Mod.COPY}),
-            # fetch: POKE, exec: BRANCH
+            # BRANCH
             ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            # fetch: COPY, exec: POKE
-            ({}, {"rre": 0, "rwe": 0, "sre": 1, "swe": 1, "mod": 0,
-                  "sraddr": SplR.TMPA, "swaddr": SplW.TMPB, "swdata": 3}),
-            # fetch: BRANCH, exec: COPY
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            # POKE
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
+                  "swaddr": SplW.TMPB, "swdata": 3}),
+            # COPY
+            ({}, {"rre": 0, "rwe": 0, "sre": 1, "swe": 0, "mod": 0,
+                  "sraddr": SplR.TMPA}),
             ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
                   "rwaddr": 4}),
             # program stopped, no more activity
