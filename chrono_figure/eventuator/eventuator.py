@@ -15,9 +15,6 @@ class Eventuator(Elaboratable):
         self.i_ctl_pc = Signal(PC_WIDTH)
         self.o_ctl_run = Signal() # currently running
         self.i_ctl_stop = Signal() # stop execution now
-        # jumping to address 0 deasserts run that cycle. if start is asserted,
-        # the jump goes to the given PC instead and run is asserted next cycle.
-        # asserting stop forces a jump to address 0 that cycle.
         
         # program memory access signals
         # (read is always enabled, even when stopped)
@@ -138,16 +135,19 @@ class Eventuator(Elaboratable):
         ]
 
         # test modify functionality
+        was_alu = Signal()
+        m.d.sync += was_alu.eq(core.o_mod_type & 0xC0 == 0xC0)
         with m.If(core.o_mod_type & 0xC0 == 0xC0):
-            m.d.comb += [
-                alu.i_mod.eq(core.o_mod),
-                core.i_mod_data.eq(alu.o_mod_data),
-                core.i_do_mod.eq(alu.o_do_mod),
-            ]
+            m.d.comb += alu.i_mod.eq(core.o_mod)
         with m.Else():
             m.d.comb += [
                 core.i_mod_data.eq(core.o_mod_data),
                 core.i_do_mod.eq(1),
+            ]
+        with m.If(was_alu):
+            m.d.comb += [
+                core.i_mod_data.eq(alu.o_mod_data),
+                core.i_do_mod.eq(alu.o_do_mod),
             ]
 
         return m

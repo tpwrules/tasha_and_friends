@@ -198,11 +198,6 @@ class EventuatorCore(Elaboratable):
             self.o_mod_type.eq(cyc_wr_mod),
         ]
 
-        m.d.sync += [
-            self.o_reg_waddr.eq(cyc_wr_reg),
-            self.o_reg_we.eq(0),
-        ]
-
         # store to load forwarding logic
         reg_rdata = Signal(DATA_WIDTH)
         forward = Signal()
@@ -236,6 +231,27 @@ class EventuatorCore(Elaboratable):
             with m.Case(InsnCode.MODIFY):
                 m.d.comb += self.o_reg_re.eq(1)
 
+        # handle writing data to registers
+        reg_wr_mod = Signal() # write modified data
+        reg_wr_spl = Signal() # write read special data
+        reg_wr_spl_data = Signal(DATA_WIDTH) # the special data to write
+        m.d.sync += [
+            self.o_reg_waddr.eq(cyc_wr_reg),
+            reg_wr_mod.eq(0),
+            reg_wr_spl.eq(0),
+            reg_wr_spl_data.eq(self.i_spl_rdata),
+        ]
+        with m.If(reg_wr_mod):
+            m.d.comb += [
+                self.o_reg_we.eq(self.i_do_mod),
+                self.o_reg_wdata.eq(self.i_mod_data),
+            ]
+        with m.Elif(reg_wr_spl):
+            m.d.comb += [
+                self.o_reg_we.eq(1),
+                self.o_reg_wdata.eq(reg_wr_spl_data),
+            ]
+
         # process instruction write cycle
         with m.Switch(Cat(cyc_wr_insn[16:], ~cyc_wr)):
             with m.Case(InsnCode.BRANCH):
@@ -266,10 +282,7 @@ class EventuatorCore(Elaboratable):
                         self.o_spl_wdata.eq(reg_rdata),
                     ]
                 with m.Else(): # special -> regular
-                    m.d.sync += [
-                        self.o_reg_we.eq(1),
-                        self.o_reg_wdata.eq(self.i_spl_rdata),
-                    ]
+                    m.d.sync += reg_wr_spl.eq(1)
 
             with m.Case(InsnCode.POKE):
                 m.d.comb += [
@@ -279,9 +292,6 @@ class EventuatorCore(Elaboratable):
 
             with m.Case(InsnCode.MODIFY):
                 m.d.comb += self.o_mod.eq(1)
-                m.d.sync += [
-                    self.o_reg_we.eq(self.i_do_mod),
-                    self.o_reg_wdata.eq(self.i_mod_data),
-                ]
+                m.d.sync += reg_wr_mod.eq(1)
 
         return m

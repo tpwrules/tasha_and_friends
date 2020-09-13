@@ -154,25 +154,29 @@ class ALU(Elaboratable):
                 m.d.comb += core.c_op.eq(ALSRU_4LUT.Op.SLR)
 
         m.d.comb += [
-            core.i_c.eq(alu_op == Op.SUB), # carry is inverted for subtract
             core.c_dir.eq(Mux(shift_right, ALSRU_4LUT.Dir.R, ALSRU_4LUT.Dir.L)),
             core.i_h.eq(Mux(is_rotate, core.o_h, 0)),
         ]
 
+        was_mod = Signal()
+        m.d.sync += [
+            was_mod.eq(self.i_mod),
+            self.o_do_mod.eq(store_result),
+            core.i_c.eq(alu_op == Op.SUB), # carry is inverted for subtract
+        ]
         # handle ALU results
         alu_flags = Signal(4)
         m.d.comb += [
             self.o_mod_data.eq(core.o_o),
-            self.o_do_mod.eq(store_result),
             alu_flags[Flags.Z].eq(core.o_z),
             alu_flags[Flags.S].eq(core.o_s),
             alu_flags[Flags.C].eq(core.o_c),
             alu_flags[Flags.V].eq(core.o_v),
 
             flags.i_flag_set.eq(
-                Mux(self.i_mod, alu_flags, self.frontend.o_flag_set)),
+                Mux(was_mod, alu_flags, self.frontend.o_flag_set)),
             flags.i_flag_clr.eq(
-                Mux(self.i_mod, 0xF, self.frontend.o_flag_clr)),
+                Mux(was_mod, 0xF, self.frontend.o_flag_clr)),
             self.frontend.i_flags.eq(flags.o_flags),
             self.o_flags.eq(flags.o_flags),
         ]

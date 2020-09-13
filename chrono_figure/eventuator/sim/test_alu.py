@@ -128,7 +128,7 @@ class TestALU(SimTest, unittest.TestCase):
         sets = {}
         chks = {"vcsz": self.core.i_flags}
         vals = [
-            (), (), (),
+            (), (), (), (),
             ({}, {"vcsz": 0b0000}), (),
             ({}, {"vcsz": 0b0101}), (),
             ({}, {"vcsz": 0b1111}), (),

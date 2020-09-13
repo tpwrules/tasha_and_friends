@@ -179,29 +179,31 @@ class ALSRU_4LUT(ALSRU, Elaboratable):
         s_x = Signal(self.width)
         with m.Switch(dec_op.x):
             with m.Case(self.XMux.AaB):
-                m.d.comb += s_x.eq(self.i_a & self.i_b)
+                m.d.sync += s_x.eq(self.i_a & self.i_b)
             with m.Case(self.XMux.AoB):
-                m.d.comb += s_x.eq(self.i_a | self.i_b)
+                m.d.sync += s_x.eq(self.i_a | self.i_b)
             with m.Case(self.XMux.AxB):
-                m.d.comb += s_x.eq(self.i_a ^ self.i_b)
+                m.d.sync += s_x.eq(self.i_a ^ self.i_b)
             with m.Case(self.XMux.A):
-                m.d.comb += s_x.eq(self.i_a)
+                m.d.sync += s_x.eq(self.i_a)
 
         s_y = Signal(self.width)
         with m.Switch(dec_op.y):
             with m.Case(self.YMux.Z):
-                m.d.comb += s_y.eq(0)
+                m.d.sync += s_y.eq(0)
             with m.Case(self.YMux.S):
-                m.d.comb += s_y.eq(s_s)
+                m.d.sync += s_y.eq(s_s)
             with m.Case(self.YMux.B):
-                m.d.comb += s_y.eq(self.i_b)
+                m.d.sync += s_y.eq(self.i_b)
             with m.Case(self.YMux.nB):
-                m.d.comb += s_y.eq(~self.i_b)
+                m.d.sync += s_y.eq(~self.i_b)
 
         s_p = Signal(self.width)
         m.d.comb += Cat(s_p, self.o_c).eq(s_x + s_y + self.i_c)
 
-        with m.Switch(dec_op.o):
+        op_o = Signal(len(dec_op.o))
+        m.d.sync += op_o.eq(dec_op.o)
+        with m.Switch(op_o):
             with m.Case(self.OMux.XpY):
                 m.d.comb += self.o_o.eq(s_p)
             with m.Case(self.OMux.Y):
