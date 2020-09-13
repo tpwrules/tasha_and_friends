@@ -47,12 +47,12 @@ class ProgramControl(Elaboratable):
         curr_pc = Signal(PC_WIDTH)
         next_pc = Signal(PC_WIDTH)
         curr_insn = Signal(INSN_WIDTH)
+        m.d.comb += self.o_cyc_rd_insn.eq(self.i_prg_data)
+        m.d.comb += self.o_cyc_wr_insn.eq(curr_insn)
         with m.If(cyc_rd):
-            m.d.comb += self.o_cyc_rd_insn.eq(self.i_prg_data)
             m.d.sync += curr_insn.eq(self.i_prg_data)
             m.d.sync += curr_pc.eq(curr_pc+1)
         with m.Elif(cyc_wr):
-            m.d.comb += self.o_cyc_wr_insn.eq(curr_insn)
             m.d.comb += self.o_prg_addr.eq(next_pc)
             m.d.sync += curr_pc.eq(next_pc)
 
@@ -252,27 +252,27 @@ class EventuatorCore(Elaboratable):
                 self.o_reg_wdata.eq(reg_wr_spl_data),
             ]
 
+        f = self.i_flags
+        branches = {
+            Cond.ALWAYS: 1,
+            Cond.LEU: ~f[Flags.C] | f[Flags.Z],
+            Cond.LTS: f[Flags.S] ^ f[Flags.V],
+            Cond.LES: f[Flags.S] ^ f[Flags.V] | f[Flags.Z],
+            Cond.Z1: f[Flags.Z],
+            Cond.S1: f[Flags.S],
+            Cond.C1: f[Flags.C],
+            Cond.V1: f[Flags.V],
+        }
+        should_branch = Signal()
+        with m.Switch(cyc_wr_cond[1:]):
+            for cond_num, cond in branches.items():
+                with m.Case(cond_num >> 1): # low bit inverts branch
+                    m.d.comb += should_branch.eq(cond)
+        del f, branches
+
         # process instruction write cycle
         with m.Switch(Cat(cyc_wr_insn[16:], ~cyc_wr)):
             with m.Case(InsnCode.BRANCH):
-                f = self.i_flags
-                branches = {
-                    Cond.ALWAYS: 1,
-                    Cond.LEU: ~f[Flags.C] | f[Flags.Z],
-                    Cond.LTS: f[Flags.S] ^ f[Flags.V],
-                    Cond.LES: f[Flags.S] ^ f[Flags.V] | f[Flags.Z],
-                    Cond.Z1: f[Flags.Z],
-                    Cond.S1: f[Flags.S],
-                    Cond.C1: f[Flags.C],
-                    Cond.V1: f[Flags.V],
-                }
-                should_branch = Signal()
-                with m.Switch(cyc_wr_cond[1:]):
-                    for cond_num, cond in branches.items():
-                        with m.Case(cond_num >> 1): # low bit inverts branch
-                            m.d.comb += should_branch.eq(cond)
-                del f, branches
-
                 m.d.comb += prg_ctl.i_branch.eq(should_branch ^ cyc_wr_cond[0])
 
             with m.Case(InsnCode.COPY):

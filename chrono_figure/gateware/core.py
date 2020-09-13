@@ -11,7 +11,7 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1003
+GATEWARE_VERSION = 1004
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -73,13 +73,19 @@ class ChronoFigureCore(Elaboratable):
             eventuator.i_event_space.eq(event_fifo.w_rdy),
         ]
 
+        wiggle = Signal()
+        m.d.sync += wiggle.eq(~wiggle)
+
         # hook the eventuator's memories to it
         m.d.comb += [
             ev_prg_rd.addr.eq(eventuator.o_prg_addr),
             ev_prg_rd.en.eq(1),
             eventuator.i_prg_data.eq(ev_prg_rd.data),
 
-            ev_reg_rd.addr.eq(eventuator.o_reg_raddr),
+            # quartus refuses to infer a BRAM for the registers on account of
+            # "asynchronous read logic" so we put something clock-related
+            # on the address that doesn't change the overall behavior to fool it
+            ev_reg_rd.addr.eq(eventuator.o_reg_raddr | wiggle),
             ev_reg_rd.en.eq(eventuator.o_reg_re),
             eventuator.i_reg_rdata.eq(ev_reg_rd.data),
 
