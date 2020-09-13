@@ -134,15 +134,15 @@ class TestCore(SimCoreTest, unittest.TestCase):
             # program is starting
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
             # first COPY reads from the special reg
-            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,}),
-            # then writes what it got to the special reg
-            ({}, {"rre": 0, "rwe": 1, "rwaddr": 1}),
-            # now try it once more
-            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPA,}),
-            ({}, {"rre": 0, "rwe": 1, "rwaddr": 2}),
+            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,}), (),
+            # then while the next COPY reads, the first COPY writes
+            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPA,
+                  "rre": 0, "rwe": 1, "rwaddr": 1}), (),
             # and again to be sure
-            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,}),
-            ({}, {"rre": 0, "rwe": 1, "rwaddr": 3}),
+            ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,
+                  "rre": 0, "rwe": 1, "rwaddr": 2}), (),
+            # the last COPY is now writing
+            ({}, {"rre": 0, "rwe": 1, "rwaddr": 3}), (),
             # program stopped, no more activity
             ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
         ]
@@ -198,14 +198,19 @@ class TestCore(SimCoreTest, unittest.TestCase):
             ({"do": 1}, {"rre": 0, "rwe": 0, "mod": 0}),
             # first MODIFY reads from the register
             ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 1}),
-            # then it does the modification and writes it back
-            ({}, {"rre": 0, "rwe": 1, "mod": 1, "rwaddr": 1, "type": Mod.COPY}),
-            # try to MODIFY something else
-            ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 2}),
-            ({}, {"rre": 0, "rwe": 1, "mod": 1, "rwaddr": 2, "type": Mod.COPY}),
+            # then it does the modification
+            ({}, {"rre": 0, "rwe": 0, "mod": 1, "type": Mod.COPY}),
+            # and finally writes it back while the next MODIFY reads a register
+            ({}, {"rre": 1, "rwe": 1, "mod": 0, "rraddr": 2, "rwaddr": 1}),
+            # and does its modification
+            ({}, {"rre": 0, "rwe": 0, "mod": 1, "type": Mod.COPY}),
             # and again so we are certain
-            ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 3}),
-            ({}, {"rre": 0, "rwe": 1, "mod": 1, "rwaddr": 3, "type": Mod.COPY}),
+            ({}, {"rre": 1, "rwe": 1, "mod": 0, "rraddr": 3, "rwaddr": 2}),
+            ({}, {"rre": 0, "rwe": 0, "mod": 1, "type": Mod.COPY}),
+            # the final write
+            ({}, {"rre": 0, "rwe": 1, "mod": 0}),
+            # program stopped, no more activity
+            ({}, {"rre": 0, "rwe": 0, "mod": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -243,11 +248,11 @@ class TestCore(SimCoreTest, unittest.TestCase):
             # MODIFY
             ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
                   "rraddr": 1}),
-            ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 1,
-                  "rwaddr": 1, "type": Mod.COPY}),
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 1,
+                  "type": Mod.COPY}),
             # COPY
-            ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
-                  "rraddr": 2}),
+            ({}, {"rre": 1, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
+                  "rraddr": 2, "rwaddr": 1}),
             ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
                   "swaddr": SplW.TMPA}),
             # BRANCH
@@ -260,10 +265,11 @@ class TestCore(SimCoreTest, unittest.TestCase):
             # MODIFY
             ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
                   "rraddr": 6}),
-            ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 1,
-                  "rwaddr": 6, "type": Mod.COPY}),
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 1,
+                  "type": Mod.COPY}),
             # BRANCH
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
+                  "rwaddr": 6}),
             ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
             # POKE
             ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
@@ -272,6 +278,7 @@ class TestCore(SimCoreTest, unittest.TestCase):
             # COPY
             ({}, {"rre": 0, "rwe": 0, "sre": 1, "swe": 0, "mod": 0,
                   "sraddr": SplR.TMPA}),
+            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
             ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
                   "rwaddr": 4}),
             # program stopped, no more activity

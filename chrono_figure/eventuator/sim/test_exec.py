@@ -54,7 +54,7 @@ class TestExecution(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r5": self.tb.reg_mem[5], "r6": self.tb.reg_mem[6]}
         vals = [
-            *[()]*19,
+            *[()]*20,
             ({}, {"r5": 1}), (),
             ({}, {"r5": 1, "r6": 2}), (),
             ({}, {"r5": 1, "r6": 2}),
@@ -75,7 +75,7 @@ class TestExecution(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3], "r4": self.tb.reg_mem[4]}
         vals = [
-            *[()]*7,
+            *[()]*8,
             ({}, {"r3": 1}), (),
             ({}, {"r3": 1, "r4": 2}), (),
             ({}, {"r3": 1, "r4": 2}), (),
@@ -95,7 +95,7 @@ class TestExecution(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
         vals = [
-            *[()]*5,
+            *[()]*6,
             ({}, {"r3": 1}), (),
             ({}, {"r3": 1}),
         ]
@@ -115,7 +115,7 @@ class TestExecution(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3], "r4": self.tb.reg_mem[4]}
         vals = [
-            *[()]*7,
+            *[()]*8,
             ({}, {"r3": 1}), (),
             ({}, {"r3": 2}), (),
             ({}, {"r3": 2}), (),

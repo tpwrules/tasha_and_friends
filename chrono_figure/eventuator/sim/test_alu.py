@@ -28,7 +28,7 @@ class TestALU(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
         vals = [
-            *[()]*9,
+            *[()]*10,
             (), (), ({}, {"r3": 69}), (),
             (), (), ({}, {"r3": 70}), (),
             (), (), ({}, {"r3": 71}), (),
@@ -56,7 +56,7 @@ class TestALU(SimTest, unittest.TestCase):
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
         vals = [
-            *[()]*7,
+            *[()]*8,
             (), (), ({}, {"r3": 69 & 43}), (),
             (), (), ({}, {"r3": 69 | 43}), (),
             (), (), ({}, {"r3": 69 ^ 43}), (),

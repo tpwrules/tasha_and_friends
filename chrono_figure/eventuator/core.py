@@ -184,11 +184,30 @@ class EventuatorCore(Elaboratable):
         m.d.comb += [
             prg_ctl.i_branch_target.eq(insn_target),
             self.o_reg_raddr.eq(insn_reg),
-            self.o_reg_waddr.eq(insn_reg),
             self.o_spl_raddr.eq(insn_spl),
             self.o_spl_waddr.eq(insn_spl),
             self.o_mod_type.eq(insn_mod),
-            self.o_mod_data.eq(self.i_reg_rdata),
+        ]
+
+        m.d.sync += [
+            self.o_reg_waddr.eq(insn_reg),
+            self.o_reg_we.eq(0),
+        ]
+
+        # store to load forwarding logic
+        reg_rdata = Signal(DATA_WIDTH)
+        forward = Signal()
+        forward_data = Signal(DATA_WIDTH)
+        # if we're reading the same register we're writing, we should read the
+        # data that we wrote
+        m.d.sync += [
+            forward.eq((self.o_reg_raddr == self.o_reg_waddr) &
+                (self.o_reg_re == 1) & (self.o_reg_we == 1)),
+            forward_data.eq(self.o_reg_wdata),
+        ]
+        m.d.comb += [
+            reg_rdata.eq(Mux(forward, forward_data, self.i_reg_rdata)),
+            self.o_mod_data.eq(reg_rdata),
         ]
 
         # decode and execute the instruction
@@ -227,10 +246,10 @@ class EventuatorCore(Elaboratable):
                 with m.If(insn_sel): # regular -> special
                     m.d.comb += [
                         self.o_spl_we.eq(1),
-                        self.o_spl_wdata.eq(self.i_reg_rdata),
+                        self.o_spl_wdata.eq(reg_rdata),
                     ]
                 with m.Else(): # special -> regular
-                    m.d.comb += [
+                    m.d.sync += [
                         self.o_reg_we.eq(1),
                         self.o_reg_wdata.eq(self.i_spl_rdata),
                     ]
@@ -248,8 +267,8 @@ class EventuatorCore(Elaboratable):
                 m.d.comb += self.o_reg_re.eq(1)
 
             with m.Case(InsnCode.MODIFY+0): # write cycle
-                m.d.comb += [
-                    self.o_mod.eq(1),
+                m.d.comb += self.o_mod.eq(1)
+                m.d.sync += [
                     self.o_reg_we.eq(self.i_do_mod),
                     self.o_reg_wdata.eq(self.i_mod_data),
                 ]
