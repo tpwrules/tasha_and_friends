@@ -125,6 +125,8 @@ class Eventuator(Elaboratable):
             # event FIFO
             self.o_event.eq(self.spl_event_fifo.o_event),
             self.o_event_we.eq(self.spl_event_fifo.o_event_we),
+            self.spl_event_fifo.i_event_space.eq(self.i_event_space),
+            core.i_ctl_pause.eq(self.spl_event_fifo.o_ctl_pause),
             # matcher config
             self.o_match_config.eq(self.spl_match_config.o_match_config),
             self.o_match_config_addr.eq(

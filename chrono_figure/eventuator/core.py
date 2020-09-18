@@ -11,6 +11,7 @@ class ProgramControl(Elaboratable):
         self.i_ctl_pc = Signal(PC_WIDTH)
         self.o_ctl_run = Signal() # currently running
         self.i_ctl_stop = Signal() # stop execution now
+        self.i_ctl_pause = Signal() # stop advancing the PC
 
         self.i_branch = Signal() # execute branch this cycle
         self.i_branch_target = Signal(PC_WIDTH)
@@ -51,7 +52,6 @@ class ProgramControl(Elaboratable):
         m.d.comb += self.o_cyc_wr_insn.eq(curr_insn)
         with m.If(cyc_rd):
             m.d.sync += curr_insn.eq(self.i_prg_data)
-            m.d.sync += curr_pc.eq(curr_pc+1)
         with m.Elif(cyc_wr):
             m.d.comb += self.o_prg_addr.eq(next_pc)
             m.d.sync += curr_pc.eq(next_pc)
@@ -96,7 +96,7 @@ class ProgramControl(Elaboratable):
                 # yes, set the PC to the target
                 m.d.comb += next_pc.eq(self.i_branch_target)
             with m.Else(): # keep on going as before
-                m.d.comb += next_pc.eq(curr_pc)
+                m.d.comb += next_pc.eq(curr_pc+(self.i_ctl_pause ^ 1))
 
         return m
 
@@ -108,6 +108,7 @@ class EventuatorCore(Elaboratable):
         self.i_ctl_pc = Signal(PC_WIDTH)
         self.o_ctl_run = Signal() # currently running
         self.i_ctl_stop = Signal() # stop execution now
+        self.i_ctl_pause = Signal() # stop advancing the PC
         
         # program memory access signals
         # (read is always enabled, even when stopped)
@@ -156,6 +157,7 @@ class EventuatorCore(Elaboratable):
             prg_ctl.i_ctl_pc.eq(self.i_ctl_pc),
             self.o_ctl_run.eq(prg_ctl.o_ctl_run),
             prg_ctl.i_ctl_stop.eq(self.i_ctl_stop),
+            prg_ctl.i_ctl_pause.eq(self.i_ctl_pause),
 
             self.o_prg_addr.eq(prg_ctl.o_prg_addr),
             prg_ctl.i_prg_data.eq(self.i_prg_data),

@@ -52,6 +52,34 @@ class TestSpecial(SimTest, unittest.TestCase):
         return sets, chks, vals, self.proc_start_prg(prg)
 
     @cycle_test
+    def test_spl_event_fifo_overflow(self):
+        prg = [
+            POKE(SplW.EVENT_FIFO, 69),
+            POKE(SplW.EVENT_FIFO, 70),
+            POKE(SplW.EVENT_FIFO, 71),
+            POKE(SplW.EVENT_FIFO, 72),
+            POKE(SplW.EVENT_FIFO, 73),
+            POKE(SplW.EVENT_FIFO, 74),
+        ]
+        sets = {"re": self.tb.i_event_re}
+        chks = {"rdy": self.tb.o_event_valid,
+                "data": self.tb.o_event,
+                "pc": self.core.prg_ctl.o_fetch_addr}
+        vals = [
+            *[()]*5,
+            ({}, {"rdy": 1, "pc": 3}), (),
+            ({}, {"rdy": 1, "pc": 4}), (),
+            ({}, {"rdy": 1, "pc": 5}), (),
+            ({}, {"rdy": 1, "pc": 5}), (),
+            ({"re": 1}, {"rdy": 1, "pc": 5, "data": 69}), ({"re": 0}, {}),
+            ({}, {"rdy": 1, "pc": 6}), (),
+            ({}, {"rdy": 1, "pc": 6}), (),
+            ({}, {}),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
+    @cycle_test
     def test_spl_match_config(self):
         prg = [
             POKE(SplW.MATCH_CONFIG_ADDR, 69),
