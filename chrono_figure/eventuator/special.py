@@ -165,3 +165,38 @@ class MatchInfoUnit(Elaboratable):
                 m.d.comb += self.o_rdata.eq(self.i_match_info.data)
 
         return m
+
+class ModOffsetUnit(Elaboratable):
+    def __init__(self):
+        # special bus signals
+        self.i_raddr = Signal(2)
+        self.i_re = Signal()
+        self.o_rdata = Signal(DATA_WIDTH)
+        self.i_waddr = Signal(2)
+        self.i_we = Signal()
+        self.i_wdata = Signal(DATA_WIDTH)
+
+        self.i_mod = Signal()
+        self.i_ctl_start = Signal()
+        self.o_mod_offset_rd = Signal(REGS_WIDTH)
+        self.o_mod_offset_wr = Signal(REGS_WIDTH)
+
+    def elaborate(self, platform):
+        m = Module()
+
+        hold = Signal()
+        with m.If((~hold & self.i_mod) | self.i_ctl_start):
+            m.d.sync += [
+                hold.eq(~self.i_ctl_start),
+                self.o_mod_offset_rd.eq(0),
+                self.o_mod_offset_wr.eq(0),
+            ]
+
+        with m.If(self.i_we):
+            with m.If(self.i_waddr[0] == SplW.MOFF_RD_TEMP_OFFSET):
+                m.d.sync += self.o_mod_offset_rd.eq(self.i_wdata)
+            with m.Elif(self.i_waddr[0] == SplW.MOFF_WR_TEMP_OFFSET):
+                m.d.sync += self.o_mod_offset_wr.eq(self.i_wdata)
+            m.d.sync += hold.eq(self.i_waddr[1])
+
+        return m

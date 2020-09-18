@@ -136,6 +136,8 @@ class EventuatorCore(Elaboratable):
         self.o_mod_data = Signal(DATA_WIDTH) # data to be modified
         self.i_do_mod = Signal() # if modified data should be stored
         self.i_mod_data = Signal(DATA_WIDTH) # modified data returned
+        self.i_mod_offset_rd = Signal(REGS_WIDTH) # register read/write offsets
+        self.i_mod_offset_wr = Signal(REGS_WIDTH) # from mod offset special unit
 
         self.i_flags = Signal(4) # ALU flags to control branches
 
@@ -229,7 +231,11 @@ class EventuatorCore(Elaboratable):
                 pass
 
             with m.Case(InsnCode.MODIFY):
-                m.d.comb += self.o_reg_re.eq(1)
+                m.d.comb += [
+                    self.o_reg_re.eq(1),
+                    # incorporate offset in the read register from that unit
+                    self.o_reg_raddr.eq(cyc_rd_reg + self.i_mod_offset_rd),
+                ]
 
         # handle writing data to registers
         reg_wr_mod = Signal() # write modified data
@@ -292,6 +298,10 @@ class EventuatorCore(Elaboratable):
 
             with m.Case(InsnCode.MODIFY):
                 m.d.comb += self.o_mod.eq(1)
-                m.d.sync += reg_wr_mod.eq(1)
+                m.d.sync += [
+                    reg_wr_mod.eq(1),
+                    # incorporate offset in the written register from that unit
+                    self.o_reg_waddr.eq(cyc_wr_reg + self.i_mod_offset_wr),
+                ]
 
         return m

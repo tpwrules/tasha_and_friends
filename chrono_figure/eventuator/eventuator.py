@@ -51,6 +51,7 @@ class Eventuator(Elaboratable):
         self.spl_event_fifo = EventFIFOUnit()
         self.spl_match_config = MatcherConfigUnit()
         self.spl_match_info = MatchInfoUnit()
+        self.spl_mod_offset = ModOffsetUnit()
 
         self.core = EventuatorCore()
         self.alu = ALU(self.spl_alu_frontend)
@@ -132,16 +133,25 @@ class Eventuator(Elaboratable):
             # match info
             Cat(*self.spl_match_info.i_match_info).eq(Cat(*curr_match_info)),
             self.o_match_enable.eq(self.spl_match_info.o_match_enable),
+            # mod offset
+            core.i_mod_offset_rd.eq(self.spl_mod_offset.o_mod_offset_rd),
+            core.i_mod_offset_wr.eq(self.spl_mod_offset.o_mod_offset_wr),
+            self.spl_mod_offset.i_mod.eq(core.o_mod),
+            self.spl_mod_offset.i_ctl_start.eq(core.i_ctl_start),
         ]
 
         # test modify functionality
         was_alu = Signal()
-        m.d.sync += was_alu.eq(core.o_mod_type & 0xC0 == 0xC0)
+        copy_data = Signal(32)
+        m.d.sync += [
+            was_alu.eq(core.o_mod_type & 0xC0 == 0xC0),
+            copy_data.eq(core.o_mod_data),
+        ]
         with m.If(core.o_mod_type & 0xC0 == 0xC0):
             m.d.comb += alu.i_mod.eq(core.o_mod)
         with m.Else():
             m.d.comb += [
-                core.i_mod_data.eq(core.o_mod_data),
+                core.i_mod_data.eq(copy_data),
                 core.i_do_mod.eq(1),
             ]
         with m.If(was_alu):

@@ -65,6 +65,16 @@ special_map = {
             ("MATCH_ENABLE", 0, "w"),
         ),
     },
+
+    "spl_mod_offset": {
+        "width": 2,
+        "regs": (
+            ("MOFF_RD_TEMP", 0, "w"),
+            ("MOFF_WR_TEMP", 1, "w"),
+            ("MOFF_RD_HOLD", 2, "w"),
+            ("MOFF_WR_HOLD", 3, "w"),
+        )
+    }
 }
 
 # validate the units and calculate the base addresses

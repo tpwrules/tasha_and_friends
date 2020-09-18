@@ -163,5 +163,67 @@ class TestSpecial(SimTest, unittest.TestCase):
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
+    @cycle_test
+    def test_spl_mod_offset(self):
+        prg = [
+            POKE(SplW.MATCH_ENABLE, 1),
+            POKE(SplW.TMPA, 69),
+            POKE(SplW.TMPB, 42),
+
+            COPY(3, SplR.TMPA),
+            COPY(4, SplR.TMPB),
+            POKE(SplW.MOFF_WR_TEMP, 1),
+            MODIFY(Mod.COPY, 3),
+
+            COPY(4, SplR.TMPB),
+            POKE(SplW.MOFF_RD_TEMP, 1),
+            MODIFY(Mod.COPY, 3),
+
+            POKE(SplW.MOFF_RD_HOLD, 1),
+            POKE(SplW.MOFF_WR_HOLD, 2),
+            COPY(3, SplR.TMPA),
+            MODIFY(Mod.COPY, 2),
+
+            COPY(4, SplR.TMPB),
+            MODIFY(Mod.COPY, 2),
+            COPY(4, SplR.TMPB),
+            *[BRANCH(0)]*6,
+            MODIFY(Mod.COPY, 2),
+        ]
+        sets = {"mt": self.tb.i_match_info.match_type,
+                "we": self.tb.i_match_we}
+        chks = {"r3": self.tb.reg_mem[3],
+                "r4": self.tb.reg_mem[4]}
+        vals = [
+            ({}, {}), (),
+            ({}, {}), (),
+            ({"mt": 3, "we": 1}, {}),
+            ({"we": 0}, {}), (),
+            ({}, {}), (),
+            ({}, {}), (),
+
+            ({}, {"r3": 69}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 69}), (),
+
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 42, "r4": 42}), (),
+
+            ({}, {"r3": 42, "r4": 42}), (),
+            ({}, {"r3": 42, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 69}), (),
+
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 69}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+            ({}, {"r3": 69, "r4": 42}), (),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
 if __name__ == "__main__":
     unittest.main()
