@@ -35,19 +35,19 @@ FIXED_FUNCTION_PROGRAM = [
     COPY(4, SplR.IMM_VAL),
     # we can now enable the matchers and wait for an event
     POKE(SplW.MATCH_ENABLE, 1), # value written does not matter
+    # pad to PC=12
+    *[BRANCH(0)]*4,
 
-    # fallthrough that just kind of wastes time but is otherwise okay
-
-    # PC = 8: MATCH_TYPE_RESET handler
+    # PC = 12: MATCH_TYPE_RESET handler
     # remember starting cycle so we can subtract it from all subsequent ones
     COPY(0, SplR.MATCH_CYCLE_COUNT),
     COPY(SplW.ALU_B1, 0),
     MODIFY(Mod.ZERO, 1), # clear currently waiting flag
     POKE(SplW.TMPA, 0), # clear event counter
-    # pad to PC=16
+    # pad to PC=20
     *[BRANCH(0)]*4,
 
-    # PC = 16: MATCH_TYPE_NMI handler
+    # PC = 20: MATCH_TYPE_NMI handler
     COPY(0, SplR.MATCH_CYCLE_COUNT), # get cycle of this event
     MODIFY(Mod.SUB_B1, 0), # subtract offset to get relative cycle
     COPY(SplW.ALU_B0, 4), # mask to 29 bits
@@ -55,9 +55,9 @@ FIXED_FUNCTION_PROGRAM = [
     COPY(2, SplR.TMPA), # get low bit of event counter
     MODIFY(Mod.GET_LSB, 2),
     MODIFY(Mod.ROTATE_RIGHT, 2),
-    BRANCH(34), # continue
+    BRANCH(38), # continue
 
-    # PC = 24: MATCH_TYPE_WAIT_START handler
+    # PC = 28: MATCH_TYPE_WAIT_START handler
     MODIFY(Mod.TEST_LSB, 1), # don't do anything if we are currently waiting
     BRANCH(0, Cond.Z0),
     COPY(5, SplR.MATCH_CYCLE_COUNT), # save relative cycle as wait cycle
@@ -65,10 +65,10 @@ FIXED_FUNCTION_PROGRAM = [
     COPY(SplW.ALU_B0, 4), # mask to 29 bits
     MODIFY(Mod.AND_B0, 5),
     MODIFY(Mod.SET_LSB, 1), # and set wait flag
-    # pad to PC=32
+    # pad to PC=36
     *[BRANCH(0)]*1,
 
-    # PC = 32: MATCH_TYPE_WAIT_END handler
+    # PC = 36: MATCH_TYPE_WAIT_END handler
     MODIFY(Mod.ZERO, 1), # clear currently waiting flag
     BRANCH(0),
 
@@ -81,9 +81,9 @@ FIXED_FUNCTION_PROGRAM = [
     MODIFY(Mod.OR_B0, 2),
     COPY(SplW.EVENT_FIFO, 2), # send the first event word
     MODIFY(Mod.TEST_LSB, 1), # get wait cycle if waiting
-    BRANCH(44, Cond.Z1),
+    BRANCH(48, Cond.Z1),
     COPY(SplW.ALU_B0, 5),
-    # PC = 44
+    # PC = 48
     COPY(2, SplR.TMPA), # get high bit of event counter
     MODIFY(Mod.ROTATE_RIGHT, 2),
     MODIFY(Mod.GET_LSB, 2),

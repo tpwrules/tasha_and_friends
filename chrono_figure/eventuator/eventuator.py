@@ -83,7 +83,7 @@ class Eventuator(Elaboratable):
             core.i_ctl_pc.eq(Mux(self.i_ctl_start, self.i_ctl_pc, ctl_pc)),
 
             ctl_start.eq(~core.o_ctl_run & self.i_match_valid & ~did_start),
-            ctl_pc.eq(self.i_match_info.match_type << 3),
+            ctl_pc.eq((self.i_match_info.match_type << 3) | 4),
             self.o_match_re.eq(ctl_start),
         ]
         curr_match_info = make_match_info()
