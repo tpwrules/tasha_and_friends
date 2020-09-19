@@ -28,27 +28,17 @@ class Cond(IntEnum): # low bit is set -> invert condition
     LES = 6
     GTS = 7
     # Z = 1
-    EQ = 8
-    NE = 9
-    Z1 = 8
-    Z0 = 9
+    EQ = Z1 = Z  = 8
+    NE = Z0 = NZ = 9
     # S = 1
-    MI = 10
-    PL = 11
-    S1 = 10
-    S0 = 11
+    MI = S1 = 10
+    PL = S0 = 11
     # C = 1
-    CS = 12
-    CC = 13
-    GEU = 12
-    LTU = 13
-    C1 = 12
-    C0 = 13
+    CS = GEU = C1 = 12
+    CC = LTU = C0 = 13
     # V = 1
-    VS = 14
-    VC = 15
-    V1 = 14
-    V0 = 15
+    VS = V1 = 14
+    VC = V0 = 15
 
 class Mod(IntEnum):
     COPY = 1
@@ -132,12 +122,21 @@ class Mod(IntEnum):
     ROTATE_RIGHT    = 0b111_11_110
 
 
+class Insn:
+    def _assemble(self, flag, special, reg):
+        if not isinstance(reg, int):
+            raise ValueError("reg is {}, not int".format(type(reg)))
+        if reg < 0 or reg >= 2**REGS_WIDTH:
+            raise ValueError("reg {} is out of range".format(reg))
+        return ((int(self.code) << 16) +
+            (int(flag) << 15) +
+            (int(special) << 8) +
+            (reg))
+
 # set the PC to the destination if the condition is true
-class BRANCH:
+class BRANCH(Insn):
     def __init__(self, dest, cond=Cond.ALWAYS):
-        dest = int(dest)
-        if dest < 0 or dest >= 2**PC_WIDTH:
-            raise ValueError("dest pc {} out of range".format(dest))
+        self.code = InsnCode.BRANCH
         self.dest = dest
 
         if not isinstance(cond, Cond):
@@ -145,133 +144,81 @@ class BRANCH:
         self.cond = cond
 
     def __int__(self):
-        return ((int(InsnCode.BRANCH) << 16) + (int(self.cond) << 12)
-            + self.dest)
+        if not isinstance(self.dest, int):
+            raise ValueError("dest is {}, not int".format(type(self.dest)))
+        if self.dest < 0 or self.dest >= 2**PC_WIDTH:
+            raise ValueError("dest pc {} is out of range".format(self.dest))
+
+        return ((int(self.code) << 16) + (int(self.cond) << 12) + self.dest)
 
     def __str__(self):
-        return "BRANCH({}, {})".format(self.dest, str(self.cond))
+        return "BRANCH({!r}, {})".format(self.dest, str(self.cond))
 
 # copy a special register to a regular register or vice versa
-class COPY:
+class COPY(Insn):
     def __init__(self, dest, src):
-        dest_special = isinstance(dest, SplW)
-        src_special = isinstance(src, SplR)
-        if dest_special and src_special:
+        self.code = InsnCode.COPY
+        if isinstance(dest, SplR):
+            raise ValueError("can't write to SplR")
+        if isinstance(src, SplW):
+            raise ValueError("can't read from SplW")
+        if isinstance(dest, SplW) and isinstance(src, SplR):
             raise ValueError("can't copy special to special")
-        elif not dest_special and not src_special:
+        if not isinstance(dest, SplW) and not isinstance(src, SplR):
             raise ValueError("can't copy reg to reg")
 
-        if dest_special:
-            self.dir = 1
-            self.dest = dest
-            src = int(src)
-            if src < 0 or src >= 2**REGS_WIDTH:
-                raise ValueError("src reg {} out of range".format(src))
-            if isinstance(dest, SplR):
-                raise ValueError("can't write to SplR")
-            self.src = src
+        if isinstance(dest, SplW):
+            self.dest_special = True
+            self.special = dest
+            self.reg = src
         else:
-            self.dir = 0
-            dest = int(dest)
-            if dest < 0 or dest >= 2**REGS_WIDTH:
-                raise ValueError("dest reg {} out of range".format(dest))
-            if isinstance(src, SplW):
-                raise ValueError("can't read from SplW")
-            self.dest = dest
-            self.src = src
-
-        self.code = InsnCode.COPY
+            self.dest_special = False
+            self.special = src
+            self.reg = dest
 
     def __int__(self):
-        n = (int(InsnCode.COPY) << 16) + (self.dir << 15)
-        if self.dir == 1:
-            return n + (int(self.dest) << 8) + self.src
-        else:
-            return n + (int(self.src) << 8) + self.dest
+        return self._assemble(self.dest_special, self.special, self.reg)
 
     def __str__(self):
-        if self.dir == 1:
-            return "COPY({}, {})".format(str(self.dest), self.src)
+        if self.dest_special:
+            return "COPY({}, {!r})".format(str(self.special), self.reg)
         else:
-            return "COPY({}, {})".format(self.dest, str(self.src))
+            return "COPY({!r}, {})".format(self.reg, str(self.special))
 
 # write a 9-bit sign-extended value to a special register
-class POKE:
+class POKE(Insn):
     def __init__(self, special, val):
+        self.code = InsnCode.POKE
         if not isinstance(special, SplW):
             raise ValueError("can only poke SplW")
         self.special = special
 
-        val = int(val)
-        if val < -256 or val > 511:
-            raise ValueError("val {} out of range".format(val))
         self.val = val
 
-        self.code = InsnCode.POKE
-
     def __int__(self):
-        return (int(InsnCode.POKE << 16) + ((self.val & 0x100) << 7)
-            + (self.special << 8) + (self.val & 0xFF))
+        if not isinstance(self.val, int):
+            raise ValueError("val is {}, not int".format(type(self.val)))
+        if self.val < -256 or self.val > 511:
+            raise ValueError("val {} is out of range".format(self.val))
+
+        return self._assemble((self.val>>8) & 1, self.special, self.val & 0xFF)
 
     def __str__(self):
-        return "POKE({}, {})".format(str(self.special), self.val)
+        return "POKE({}, {!r})".format(str(self.special), self.val)
 
 # do a read-modify-write operation on a register
-class MODIFY:
+class MODIFY(Insn):
     def __init__(self, reg, mod):
+        self.code = InsnCode.MODIFY
         if not isinstance(mod, Mod):
-            raise ValueError("not a mod")
+            raise ValueError("not a valid Mod")
         self.mod = mod
-        
-        if reg < 0 or reg >= 2**REGS_WIDTH:
-            raise ValueError("reg {} out of range".format(reg))
+
         self.reg = reg
 
-        self.code = InsnCode.MODIFY
-
     def __int__(self):
-        return (int(InsnCode.MODIFY << 16) + int(self.mod << 8) + self.reg)
+        mod = int(self.mod)
+        return self._assemble(mod >> 7, mod & 0x7F, self.reg)
 
     def __str__(self):
-        return "MODIFY({}, {})".format(self.reg, str(self.mod))
-
-
-if __name__ == "__main__":
-    def ass(got, expected):
-        if got != expected:
-            raise AssertionError("expected {} but got {}".format(expected, got))
-    print("Testing basic instruction encoding")
-    i = BRANCH(0) # MUST BE ENCODED AS 0
-    ass(hex(int(i)), "0x0")
-    ass(str(i), "BRANCH(0, Cond.ALWAYS)")
-
-    i = BRANCH(69)
-    ass(hex(int(i)), "0x45")
-    ass(str(i), "BRANCH(69, Cond.ALWAYS)")
-
-    i = BRANCH(69, Cond.NEVER)
-    ass(hex(int(i)), "0xf045")
-    ass(str(i), "BRANCH(69, Cond.NEVER)")
-
-    i = COPY(SplW.TMPA, 69)
-    ass(hex(int(i)), "0x18045")
-    ass(str(i), "COPY(SplW.TMPA, 69)")
-    i = COPY(69, SplR.TMPB)
-    ass(hex(int(i)), "0x10145")
-    ass(str(i), "COPY(69, SplR.TMPB)")
-    
-    i = POKE(SplW.TMPB, 69)
-    ass(hex(int(i)), "0x20145")
-    ass(str(i), "POKE(SplW.TMPB, 69)")
-    i = POKE(SplW.TMPB, -69)
-    ass(hex(int(i)), "0x281bb")
-    ass(str(i), "POKE(SplW.TMPB, -69)")
-    i = POKE(SplW.TMPA, 269)
-    ass(hex(int(i)), "0x2800d")
-    ass(str(i), "POKE(SplW.TMPA, 269)")
-
-    i = MODIFY(Mod.COPY, 69)
-    ass(hex(int(i)), "0x30145")
-    ass(str(i), "MODIFY(Mod.COPY, 69)")
-
-    print("Passed")
+        return "MODIFY({!r}, {})".format(self.reg, str(self.mod))
