@@ -52,6 +52,7 @@ class Eventuator(Elaboratable):
         self.spl_match_config = MatcherConfigUnit()
         self.spl_match_info = MatchInfoUnit()
         self.spl_mod_offset = ModOffsetUnit()
+        self.spl_branch_ind = BranchIndirectUnit()
 
         self.core = EventuatorCore()
         self.alu = ALU(self.spl_alu_frontend)
@@ -140,6 +141,11 @@ class Eventuator(Elaboratable):
             core.i_mod_offset_wr.eq(self.spl_mod_offset.o_mod_offset_wr),
             self.spl_mod_offset.i_mod.eq(core.o_mod),
             self.spl_mod_offset.i_ctl_start.eq(core.i_ctl_start),
+            # branch indirect
+            core.i_branch_ind.eq(self.spl_branch_ind.o_branch_ind),
+            core.i_branch_ind_target.eq(self.spl_branch_ind.o_branch_ind_target),
+            self.spl_branch_ind.i_branch_exec.eq(core.o_branch_exec),
+            self.spl_branch_ind.i_prg_addr.eq(core.o_prg_addr),
         ]
 
         # test modify functionality

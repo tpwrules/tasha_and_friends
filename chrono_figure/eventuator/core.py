@@ -141,6 +141,9 @@ class EventuatorCore(Elaboratable):
         self.i_mod_offset_wr = Signal(REGS_WIDTH) # from mod offset special unit
 
         self.i_flags = Signal(4) # ALU flags to control branches
+        self.i_branch_ind = Signal() # should we branch indirectly?
+        self.i_branch_ind_target = Signal(PC_WIDTH) # to where?
+        self.o_branch_exec = Signal() # branch is executing (NO MATTER if taken)
 
         self.prg_ctl = ProgramControl()
 
@@ -195,7 +198,8 @@ class EventuatorCore(Elaboratable):
 
         # fixed purpose instruction fields
         m.d.comb += [
-            prg_ctl.i_branch_target.eq(cyc_wr_target),
+            prg_ctl.i_branch_target.eq(
+                Mux(self.i_branch_ind, self.i_branch_ind_target, cyc_wr_target)),
             self.o_reg_raddr.eq(cyc_rd_reg),
             self.o_spl_raddr.eq(cyc_rd_spl),
             self.o_spl_waddr.eq(cyc_wr_spl),
@@ -281,7 +285,10 @@ class EventuatorCore(Elaboratable):
         # process instruction write cycle
         with m.Switch(Cat(cyc_wr_insn[16:], ~cyc_wr)):
             with m.Case(InsnCode.BRANCH):
-                m.d.comb += prg_ctl.i_branch.eq(should_branch ^ cyc_wr_cond[0])
+                m.d.comb += [
+                    prg_ctl.i_branch.eq(should_branch ^ cyc_wr_cond[0]),
+                    self.o_branch_exec.eq(1),
+                ]
 
             with m.Case(InsnCode.COPY):
                 with m.If(cyc_wr_sel): # regular -> special

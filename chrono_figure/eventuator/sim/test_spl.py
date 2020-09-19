@@ -251,5 +251,37 @@ class TestSpecial(SimTest, unittest.TestCase):
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
+    @cycle_test
+    def test_spl_branch_ind(self):
+        prg = [
+            BRANCH(2),
+            POKE(SplW.BRANCH_IND_TARGET, 5),
+            BRANCH(0),
+            BRANCH(0),
+            BRANCH(7),
+            BRANCH(0),
+            COPY(3, SplR.CURR_PC),
+            COPY(SplW.BRANCH_IND_TARGET, 3),
+            BRANCH(0),
+        ]
+        sets = {}
+        chks = {"pc": self.core.prg_ctl.o_fetch_addr}
+        vals = [
+            ({}, {"pc": 0}),
+            ({}, {"pc": 1}), ({}, {"pc": 1}),
+            ({}, {"pc": 2}), ({}, {"pc": 2}),
+            ({}, {"pc": 3}), ({}, {"pc": 3}),
+            ({}, {"pc": 5}), ({}, {"pc": 5}),
+            ({}, {"pc": 7}), ({}, {"pc": 7}),
+            ({}, {"pc": 8}), ({}, {"pc": 8}),
+            ({}, {"pc": 9}), ({}, {"pc": 9}),
+            ({}, {"pc": 7}), ({}, {"pc": 7}),
+            ({}, {"pc": 8}), ({}, {"pc": 8}),
+            ({}, {"pc": 9}), ({}, {"pc": 9}),
+            # and so on
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
 if __name__ == "__main__":
     unittest.main()

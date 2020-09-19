@@ -205,3 +205,37 @@ class ModOffsetUnit(Elaboratable):
             m.d.sync += hold.eq(self.i_waddr[1])
 
         return m
+
+class BranchIndirectUnit(Elaboratable):
+    def __init__(self):
+        # special bus signals
+        self.i_raddr = Signal(0)
+        self.i_re = Signal()
+        self.o_rdata = Signal(DATA_WIDTH)
+        self.i_waddr = Signal(0)
+        self.i_we = Signal()
+        self.i_wdata = Signal(DATA_WIDTH)
+
+        self.o_branch_ind = Signal()
+        self.o_branch_ind_target = Signal(PC_WIDTH)
+        self.i_branch_exec = Signal()
+        self.i_prg_addr = Signal(PC_WIDTH)
+
+    def elaborate(self, platform):
+        m = Module()
+
+        with m.If(self.i_we):
+            m.d.sync += [
+                self.o_branch_ind_target.eq(self.i_wdata),
+                self.o_branch_ind.eq(1),
+            ]
+        with m.Elif(self.i_branch_exec):
+            m.d.sync += self.o_branch_ind.eq(0)
+
+        pc_temp = Signal(PC_WIDTH)
+        m.d.sync += [
+            pc_temp.eq(self.i_prg_addr),
+            self.o_rdata.eq(pc_temp),
+        ]
+
+        return m

@@ -74,7 +74,15 @@ special_map = {
             ("MOFF_RD_HOLD", 2, "w"),
             ("MOFF_WR_HOLD", 3, "w"),
         )
-    }
+    },
+
+    "spl_branch_ind": {
+        "width": 0,
+        "regs": (
+            ("BRANCH_IND_TARGET", 0, "w"),
+            ("CURR_PC", 0, "r"),
+        ),
+    },
 }
 
 # validate the units and calculate the base addresses
