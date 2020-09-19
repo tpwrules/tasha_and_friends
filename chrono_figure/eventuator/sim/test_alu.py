@@ -20,10 +20,10 @@ class TestALU(SimTest, unittest.TestCase):
             POKE(SplW.TMPA, 69),
             POKE(SplW.ALU_B0, 2),
             POKE(SplW.ALU_B1, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.ADD_0, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.INC, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.ADD_B0, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.ADD_B1, 3),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.ADD_0),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.INC),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.ADD_B0),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.ADD_B1),
         ]
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
@@ -42,16 +42,16 @@ class TestALU(SimTest, unittest.TestCase):
         prg = [
             POKE(SplW.TMPA, 69),
             POKE(SplW.ALU_B0, 43),
-            COPY(3, SplR.TMPA), MODIFY(Mod.AND_B0, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.OR_B0, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.XOR_B0, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.ADD_B0, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.SUB_B0, 3),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.AND_B0),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.OR_B0),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.XOR_B0),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.ADD_B0),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.SUB_B0),
 
-            COPY(3, SplR.TMPA), MODIFY(Mod.SHIFT_LEFT, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.SHIFT_RIGHT, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.ROTATE_LEFT, 3),
-            COPY(3, SplR.TMPA), MODIFY(Mod.ROTATE_RIGHT, 3),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.SHIFT_LEFT),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.SHIFT_RIGHT),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.ROTATE_LEFT),
+            COPY(3, SplR.TMPA), MODIFY(3, Mod.ROTATE_RIGHT),
         ]
         sets = {}
         chks = {"r3": self.tb.reg_mem[3]}
@@ -97,7 +97,7 @@ class TestALU(SimTest, unittest.TestCase):
         pc = 0
         for a, b, *conds in tests:
             vals.extend(((({"r3": a, "b0": b}, {"pc": pc})), ()))
-            prg.append(MODIFY(Mod.CMP_B0, 3))
+            prg.append(MODIFY(3, Mod.CMP_B0))
             pc += 1
             for cond in conds:
                 prg.append(BRANCH(0, Cond(cond ^ 1)))
@@ -121,7 +121,7 @@ class TestALU(SimTest, unittest.TestCase):
             COPY(3, SplR.ALU_FLAGS),
             POKE(SplW.ALU_B0, 0b1111),
             POKE(SplW.ALU_FLAGS, 0b0000_0000),
-            MODIFY(Mod.CMP_B0, 3),
+            MODIFY(3, Mod.CMP_B0),
             POKE(SplW.ALU_FLAGS, 0b0000_0000),
             POKE(SplW.ALU_FLAGS, 0b1111_0000),
         ]

@@ -182,9 +182,9 @@ class TestCore(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_MODIFY_logic(self):
         prg = [
-            MODIFY(Mod.COPY, 1),
-            MODIFY(Mod.COPY, 2),
-            MODIFY(Mod.COPY, 3),
+            MODIFY(1, Mod.COPY),
+            MODIFY(2, Mod.COPY),
+            MODIFY(3, Mod.COPY),
         ]
         sets = {"do": self.core.i_do_mod}
         chks = {"rraddr": self.core.o_reg_raddr,
@@ -218,7 +218,7 @@ class TestCore(SimCoreTest, unittest.TestCase):
     @cycle_test
     def test_mixed_logic(self):
         prg = [
-            MODIFY(Mod.COPY, 1),
+            MODIFY(1, Mod.COPY),
             COPY(SplW.TMPA, 2),
             BRANCH(7),
             # 4
@@ -227,7 +227,7 @@ class TestCore(SimCoreTest, unittest.TestCase):
             BRANCH(0),
             # 7
             POKE(SplW.TMPA, 5),
-            MODIFY(Mod.COPY, 6),
+            MODIFY(6, Mod.COPY),
             BRANCH(4),
         ]
         sets = {"do": self.core.i_do_mod}

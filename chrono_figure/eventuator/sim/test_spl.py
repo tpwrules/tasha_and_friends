@@ -199,22 +199,22 @@ class TestSpecial(SimTest, unittest.TestCase):
             COPY(3, SplR.TMPA),
             COPY(4, SplR.TMPB),
             POKE(SplW.MOFF_WR_TEMP, 1),
-            MODIFY(Mod.COPY, 3),
+            MODIFY(3, Mod.COPY),
 
             COPY(4, SplR.TMPB),
             POKE(SplW.MOFF_RD_TEMP, 1),
-            MODIFY(Mod.COPY, 3),
+            MODIFY(3, Mod.COPY),
 
             POKE(SplW.MOFF_RD_HOLD, 1),
             POKE(SplW.MOFF_WR_HOLD, 2),
             COPY(3, SplR.TMPA),
-            MODIFY(Mod.COPY, 2),
+            MODIFY(2, Mod.COPY),
 
             COPY(4, SplR.TMPB),
-            MODIFY(Mod.COPY, 2),
+            MODIFY(2, Mod.COPY),
             COPY(4, SplR.TMPB),
             *[BRANCH(0)]*6,
-            MODIFY(Mod.COPY, 2),
+            MODIFY(2, Mod.COPY),
         ]
         sets = {"mt": self.tb.i_match_info.match_type,
                 "we": self.tb.i_match_we}

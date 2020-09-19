@@ -69,8 +69,8 @@ class TestExecution(SimTest, unittest.TestCase):
             POKE(SplW.TMPB, 2), #  by reading them from the specials, which we
             COPY(3, SplR.TMPA), #  already checked works
             COPY(4, SplR.TMPB),
-            MODIFY(Mod.COPY, 3), # copy the registers to themselves and verify
-            MODIFY(Mod.COPY, 4), #  that the values do not change
+            MODIFY(3, Mod.COPY), # copy the registers to themselves and verify
+            MODIFY(4, Mod.COPY), #  that the values do not change
         ]
         sets = {}
         chks = {"r3": self.tb.reg_mem[3], "r4": self.tb.reg_mem[4]}

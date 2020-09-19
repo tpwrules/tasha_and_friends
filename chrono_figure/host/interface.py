@@ -42,64 +42,64 @@ FIXED_FUNCTION_PROGRAM = [
     # remember starting cycle so we can subtract it from all subsequent ones
     COPY(0, SplR.MATCH_CYCLE_COUNT),
     COPY(SplW.ALU_B1, 0),
-    MODIFY(Mod.ZERO, 1), # clear currently waiting flag
+    MODIFY(1, Mod.ZERO), # clear currently waiting flag
     POKE(SplW.TMPA, 0), # clear event counter
     # pad to PC=20
     *[BRANCH(0)]*4,
 
     # PC = 20: MATCH_TYPE_NMI handler
     COPY(0, SplR.MATCH_CYCLE_COUNT), # get cycle of this event
-    MODIFY(Mod.SUB_B1, 0), # subtract offset to get relative cycle
+    MODIFY(0, Mod.SUB_B1), # subtract offset to get relative cycle
     COPY(SplW.ALU_B0, 4), # mask to 29 bits
-    MODIFY(Mod.AND_B0, 0),
+    MODIFY(0, Mod.AND_B0),
     COPY(2, SplR.TMPA), # get low bit of event counter
-    MODIFY(Mod.GET_LSB, 2),
-    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(2, Mod.GET_LSB),
+    MODIFY(2, Mod.ROTATE_RIGHT),
     BRANCH(38), # continue
 
     # PC = 28: MATCH_TYPE_WAIT_START handler
-    MODIFY(Mod.TEST_LSB, 1), # don't do anything if we are currently waiting
+    MODIFY(1, Mod.TEST_LSB), # don't do anything if we are currently waiting
     BRANCH(0, Cond.Z0),
     COPY(5, SplR.MATCH_CYCLE_COUNT), # save relative cycle as wait cycle
-    MODIFY(Mod.SUB_B1, 5),
+    MODIFY(5, Mod.SUB_B1),
     COPY(SplW.ALU_B0, 4), # mask to 29 bits
-    MODIFY(Mod.AND_B0, 5),
-    MODIFY(Mod.SET_LSB, 1), # and set wait flag
+    MODIFY(5, Mod.AND_B0),
+    MODIFY(1, Mod.SET_LSB), # and set wait flag
     # pad to PC=36
     *[BRANCH(0)]*1,
 
     # PC = 36: MATCH_TYPE_WAIT_END handler
-    MODIFY(Mod.ZERO, 1), # clear currently waiting flag
+    MODIFY(1, Mod.ZERO), # clear currently waiting flag
     BRANCH(0),
 
     # MATCH_TYPE_NMI continued
-    MODIFY(Mod.ROTATE_RIGHT, 2),
-    MODIFY(Mod.ROTATE_RIGHT, 2),
+    MODIFY(2, Mod.ROTATE_RIGHT),
+    MODIFY(2, Mod.ROTATE_RIGHT),
     COPY(SplW.ALU_B0, 3), # set bit 30 using premade constant
-    MODIFY(Mod.OR_B0, 2),
+    MODIFY(2, Mod.OR_B0),
     COPY(SplW.ALU_B0, 0), # OR in the event's cycle
-    MODIFY(Mod.OR_B0, 2),
+    MODIFY(2, Mod.OR_B0),
     COPY(SplW.EVENT_FIFO, 2), # send the first event word
-    MODIFY(Mod.TEST_LSB, 1), # get wait cycle if waiting
+    MODIFY(1, Mod.TEST_LSB), # get wait cycle if waiting
     BRANCH(48, Cond.Z1),
     COPY(SplW.ALU_B0, 5),
     # PC = 48
     COPY(2, SplR.TMPA), # get high bit of event counter
-    MODIFY(Mod.ROTATE_RIGHT, 2),
-    MODIFY(Mod.GET_LSB, 2),
-    MODIFY(Mod.ROTATE_RIGHT, 2),
-    MODIFY(Mod.ROTATE_RIGHT, 2),
-    MODIFY(Mod.ROTATE_RIGHT, 2),
-    MODIFY(Mod.OR_B0, 2), # OR in the cycle
+    MODIFY(2, Mod.ROTATE_RIGHT),
+    MODIFY(2, Mod.GET_LSB),
+    MODIFY(2, Mod.ROTATE_RIGHT),
+    MODIFY(2, Mod.ROTATE_RIGHT),
+    MODIFY(2, Mod.ROTATE_RIGHT),
+    MODIFY(2, Mod.OR_B0), # OR in the cycle
     COPY(SplW.EVENT_FIFO, 2), # send the second event word
-    MODIFY(Mod.ZERO, 1), # clear currently waiting flag
+    MODIFY(1, Mod.ZERO), # clear currently waiting flag
     # increment event counter
     COPY(2, SplR.TMPA),
-    MODIFY(Mod.INC, 2),
+    MODIFY(2, Mod.INC),
     COPY(SplW.TMPA, 2),
     # reset back to 1 if it's now 4 (we don't use 0 except for reset)
     POKE(SplW.ALU_B0, 4),
-    MODIFY(Mod.CMP_B0, 2),
+    MODIFY(2, Mod.CMP_B0),
     BRANCH(0, Cond.NE),
     POKE(SplW.TMPA, 1),
     BRANCH(0),

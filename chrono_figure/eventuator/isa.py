@@ -218,7 +218,7 @@ class POKE:
 
 # do a read-modify-write operation on a register
 class MODIFY:
-    def __init__(self, mod, reg):
+    def __init__(self, reg, mod):
         if not isinstance(mod, Mod):
             raise ValueError("not a mod")
         self.mod = mod
@@ -233,7 +233,7 @@ class MODIFY:
         return (int(InsnCode.MODIFY << 16) + int(self.mod << 8) + self.reg)
 
     def __str__(self):
-        return "MODIFY({}, {})".format(str(self.mod), self.reg)
+        return "MODIFY({}, {})".format(self.reg, str(self.mod))
 
 
 if __name__ == "__main__":
