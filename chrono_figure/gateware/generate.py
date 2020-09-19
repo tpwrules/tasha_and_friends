@@ -3,6 +3,7 @@ from nmigen.back import verilog
 
 from .core import ChronoFigureCore
 from .snes_bus import make_cart_signals
+from ..eventuator import isa
 
 # create the topmost module. it's responsible for setting up the clock.
 class Top(Elaboratable):
@@ -10,12 +11,12 @@ class Top(Elaboratable):
         # main system clock
         self.i_clock = Signal()
 
-        self.i_config = Signal(32) # configuration word
-        self.i_config_addr = Signal(8) # which matcher to apply it to
-        self.i_config_we = Signal() # write word to the address
+        self.i_prg_insn = Signal(isa.INSN_WIDTH) # program instruction
+        self.i_prg_addr = Signal(isa.PC_WIDTH) # what address to write to
+        self.i_prg_we = Signal() # write instruction to the address
 
         # connection to the event FIFO
-        self.o_event = Signal(31)
+        self.o_event = Signal(32)
         self.o_event_valid = Signal()
         self.i_event_re = Signal() # acknowledge the data
 

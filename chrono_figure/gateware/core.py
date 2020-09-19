@@ -11,23 +11,23 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1005
+GATEWARE_VERSION = 1006
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
-        self.i_config = Signal(32) # configuration word
-        self.i_config_addr = Signal(8) # which matcher to apply it to
-        self.i_config_we = Signal() # write word to the address
+        self.i_prg_insn = Signal(isa.INSN_WIDTH) # program instruction
+        self.i_prg_addr = Signal(isa.PC_WIDTH) # what address to write to
+        self.i_prg_we = Signal() # write instruction to the address
 
         # connection to the event FIFO
-        self.o_event = Signal(31)
+        self.o_event = Signal(32)
         self.o_event_valid = Signal()
         self.i_event_re = Signal() # acknowledge the data
 
         # version constant output for the get version command
         self.o_gateware_version = Const(GATEWARE_VERSION, 32)
 
-        self.event_fifo = SyncFIFOBuffered(width=31, depth=128)
+        self.event_fifo = SyncFIFOBuffered(width=32, depth=128)
         self.bus = SNESBus(cart_signals)
         self.match_engine = MatchEngine()
         
@@ -105,23 +105,28 @@ class ChronoFigureCore(Elaboratable):
         with m.Elif(eventuator.o_match_enable):
             m.d.sync += match_engine.i_reset_match_fifo.eq(0)
 
-        # allow "configuration" of program memory
+        # handle writes to program memory
         m.d.sync += [
-            ev_prg_wr.addr.eq(self.i_config_addr),
-            ev_prg_wr.data.eq(self.i_config),
-            ev_prg_wr.en.eq(self.i_config_we & (self.i_config_addr != 0)),
-
-            eventuator.i_ctl_pc.eq(self.i_config),
+            ev_prg_wr.addr.eq(self.i_prg_addr),
+            ev_prg_wr.data.eq(self.i_prg_insn),
+            ev_prg_wr.en.eq(self.i_prg_we & (self.i_prg_addr != 0)),
         ]
-        with m.If(self.i_config_we & (self.i_config_addr == 0)):
-            m.d.sync += [
-                eventuator.i_ctl_start.eq(~self.i_config[-1]),
-                eventuator.i_ctl_stop.eq(self.i_config[-1]),
-            ]
-        with m.Else():
-            m.d.sync += [
-                eventuator.i_ctl_start.eq(0),
-                eventuator.i_ctl_stop.eq(0),
-            ]
+
+        stop_timer = Signal(3) # make ultra turbo mega sure everything stops
+        with m.If(stop_timer > 0):
+            m.d.sync += stop_timer.eq(stop_timer-1)
+            m.d.comb += eventuator.i_ctl_stop.eq(1)
+
+        # writing to address 0 controls execution: zero stops execution and
+        # non-zero starts execution (if stopped) at the written address
+        m.d.sync += [
+            eventuator.i_ctl_pc.eq(self.i_prg_insn[:isa.PC_WIDTH]),
+            eventuator.i_ctl_start.eq(0),
+        ]
+        with m.If(self.i_prg_we & (self.i_prg_addr == 0)):
+            with m.If(self.i_prg_insn[:isa.PC_WIDTH] == 0):
+                m.d.sync += stop_timer.eq(7) # write 0 = stopping
+            with m.Else():
+                m.d.sync += eventuator.i_ctl_start.eq(1)
 
         return m

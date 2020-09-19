@@ -41,7 +41,7 @@ class Eventuator(Elaboratable):
         self.o_match_config_we = Signal()
 
         # event data fifo signals
-        self.o_event = Signal(31)
+        self.o_event = Signal(32)
         self.o_event_we = Signal()
         self.i_event_space = Signal() # space for more valid events
 

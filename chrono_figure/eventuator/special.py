@@ -86,7 +86,7 @@ class EventFIFOUnit(Elaboratable):
         self.i_we = Signal()
         self.i_wdata = Signal(DATA_WIDTH)
 
-        self.o_event = Signal(31)
+        self.o_event = Signal(32)
         self.o_event_we = Signal()
         self.i_event_space = Signal()
         self.o_ctl_pause = Signal()

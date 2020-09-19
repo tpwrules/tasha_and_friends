@@ -8,7 +8,7 @@ from ..gateware import core as gateware
 from chrono_figure.eventuator.isa import *
 
 # usb2snes expected firmware version
-FIRMWARE_VERSION = 0xC10A0301
+FIRMWARE_VERSION = 0xC10A0302
 
 # chrono figure address space addresses. matches usb2snes's src/chrono_figure.c
 ADDR_GATEWARE_VERSION = 0x00000000
@@ -193,6 +193,11 @@ class ChronoFigureInterface:
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
             ADDR_CLEAR_SAVE_RAM, struct.pack("<I", CLEAR_SAVE_RAM_KEY))
 
+    def _read_event_fifo(self):
+        new_data = struct.unpack("<128I", self.device.read_space(
+            usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
+        return new_data[1:new_data[0]+1]
+
     # run a program on the eventuator and optionally wait for it to complete
     def _exec_program(self, prg, wait=False):
         if len(prg) > 250:
@@ -208,10 +213,9 @@ class ChronoFigureInterface:
 
         # stop the eventuator (and clear match FIFO)
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
-            ADDR_MATCHER_CONFIG, (0x80000000).to_bytes(4, "little"))
+            ADDR_MATCHER_CONFIG, (0).to_bytes(4, "little"))
         # clear out any old events
-        self.device.read_space(usb2snes.SPACE_CHRONO_FIGURE,
-            ADDR_EVENT_FIFO, 512)
+        self._read_event_fifo()
         # transfer in the program
         prg = struct.pack("<{}I".format(len(prg)), *(int(i) for i in prg))
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
@@ -222,9 +226,7 @@ class ChronoFigureInterface:
         # wait for it to finish (if asked)
         if wait:
             while True:
-                new_data = struct.unpack("<128I", self.device.read_space(
-                    usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
-                event_data = list(filter(lambda w: not (w & (1<<31)), new_data))
+                event_data = self._read_event_fifo()
                 if len(event_data) > 0 and event_data[0] == 2:
                     break
                 time.sleep(0.01)
@@ -289,14 +291,12 @@ class ChronoFigureInterface:
         got_events = []
 
         event_data = self.last_data # remember any half-received events
-        # empty the event FIFO of all its 32 bit data words
-        new_data = struct.unpack("<128I", self.device.read_space(
-            usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
-        # words with the high bit set are invalid (the FIFO was empty)
-        event_data.extend(filter(lambda w: not (w & (1<<31)), new_data))
+        event_data.extend(self._read_event_fifo())
 
         while len(event_data) > 1: # each event is 2 words
             d0, d1 = event_data[:2]
+            d0 &= 0x7FFFFFFF
+            d1 &= 0x7FFFFFFF
             # bit 30 is set on the first word of each event and clear on the
             # second. skip words until we find a valid first and second. this
             # will probably trip the "missed event" handler below.
