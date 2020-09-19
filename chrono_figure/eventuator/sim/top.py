@@ -48,7 +48,7 @@ class SimCoreTop(Elaboratable):
 
 # simulate the whole eventuation system
 class SimTop(Elaboratable):
-    def __init__(self, match_d=256, event_d=128, prg_d=1024, reg_d=256):
+    def __init__(self, match_d=256, event_d=512, prg_d=1024, reg_d=256):
         # smaller depths simulate faster
         self.match_fifo = SyncFIFOBuffered(width=72, depth=match_d)
         self.event_fifo = SyncFIFOBuffered(width=32, depth=event_d)

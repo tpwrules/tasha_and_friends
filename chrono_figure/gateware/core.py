@@ -11,7 +11,7 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1006
+GATEWARE_VERSION = 1007
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -27,7 +27,7 @@ class ChronoFigureCore(Elaboratable):
         # version constant output for the get version command
         self.o_gateware_version = Const(GATEWARE_VERSION, 32)
 
-        self.event_fifo = SyncFIFOBuffered(width=32, depth=128)
+        self.event_fifo = SyncFIFOBuffered(width=32, depth=512)
         self.bus = SNESBus(cart_signals)
         self.match_engine = MatchEngine()
         

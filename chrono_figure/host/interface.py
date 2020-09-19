@@ -194,9 +194,14 @@ class ChronoFigureInterface:
             ADDR_CLEAR_SAVE_RAM, struct.pack("<I", CLEAR_SAVE_RAM_KEY))
 
     def _read_event_fifo(self):
-        new_data = struct.unpack("<128I", self.device.read_space(
-            usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
-        return new_data[1:new_data[0]+1]
+        event_data = []
+        while True:
+            new_data = struct.unpack("<128I", self.device.read_space(
+                usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
+            event_data.extend(new_data[1:new_data[0]+1])
+            if new_data[0] < 127:
+                break # FIFO can't have more data
+        return event_data
 
     # run a program on the eventuator and optionally wait for it to complete
     def _exec_program(self, prg, wait=False):
