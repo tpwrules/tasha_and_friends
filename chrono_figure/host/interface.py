@@ -25,8 +25,8 @@ ADDR_EVENT_FIFO = 0x80000000
 class CFInterfaceError(Exception): pass
 
 # program that emulates the old fixed-function Chrono Fgure
-FIXED_FUNCTION_PROGRAM = [
-    # we start at PC=1
+FIXED_FUNCTION_PROGRAM = ev_assemble([
+    L("start", org=1),
     POKE(SplW.IMM_B0, 0), # build constant with bit 30 set
     POKE(SplW.IMM_B3, 1<<6),
     COPY(3, SplR.IMM_VAL),
@@ -35,19 +35,17 @@ FIXED_FUNCTION_PROGRAM = [
     COPY(4, SplR.IMM_VAL),
     # we can now enable the matchers and wait for an event
     POKE(SplW.MATCH_ENABLE, 1), # value written does not matter
-    # pad to PC=12
-    *[BRANCH(0)]*4,
+    BRANCH(0),
 
-    # PC = 12: MATCH_TYPE_RESET handler
+    L("MATCH_TYPE_RESET_handler", org=12),
     # remember starting cycle so we can subtract it from all subsequent ones
     COPY(0, SplR.MATCH_CYCLE_COUNT),
     COPY(SplW.ALU_B1, 0),
     MODIFY(1, Mod.ZERO), # clear currently waiting flag
     POKE(SplW.TMPA, 0), # clear event counter
-    # pad to PC=20
-    *[BRANCH(0)]*4,
+    BRANCH(0),
 
-    # PC = 20: MATCH_TYPE_NMI handler
+    L("MATCH_TYPE_NMI_handler", org=20),
     COPY(0, SplR.MATCH_CYCLE_COUNT), # get cycle of this event
     MODIFY(0, Mod.SUB_B1), # subtract offset to get relative cycle
     COPY(SplW.ALU_B0, 4), # mask to 29 bits
@@ -55,9 +53,9 @@ FIXED_FUNCTION_PROGRAM = [
     COPY(2, SplR.TMPA), # get low bit of event counter
     MODIFY(2, Mod.GET_LSB),
     MODIFY(2, Mod.ROTATE_RIGHT),
-    BRANCH(38), # continue
+    BRANCH("nmi_continued"),
 
-    # PC = 28: MATCH_TYPE_WAIT_START handler
+    L("MATCH_TYPE_WAIT_START_handler", org=28),
     MODIFY(1, Mod.TEST_LSB), # don't do anything if we are currently waiting
     BRANCH(0, Cond.Z0),
     COPY(5, SplR.MATCH_CYCLE_COUNT), # save relative cycle as wait cycle
@@ -65,14 +63,13 @@ FIXED_FUNCTION_PROGRAM = [
     COPY(SplW.ALU_B0, 4), # mask to 29 bits
     MODIFY(5, Mod.AND_B0),
     MODIFY(1, Mod.SET_LSB), # and set wait flag
-    # pad to PC=36
-    *[BRANCH(0)]*1,
+    BRANCH(0),
 
-    # PC = 36: MATCH_TYPE_WAIT_END handler
+    L("MATCH_TYPE_WAIT_END_handler", org=36),
     MODIFY(1, Mod.ZERO), # clear currently waiting flag
     BRANCH(0),
 
-    # MATCH_TYPE_NMI continued
+    L("nmi_continued"),
     MODIFY(2, Mod.ROTATE_RIGHT),
     MODIFY(2, Mod.ROTATE_RIGHT),
     COPY(SplW.ALU_B0, 3), # set bit 30 using premade constant
@@ -81,9 +78,9 @@ FIXED_FUNCTION_PROGRAM = [
     MODIFY(2, Mod.OR_B0),
     COPY(SplW.EVENT_FIFO, 2), # send the first event word
     MODIFY(1, Mod.TEST_LSB), # get wait cycle if waiting
-    BRANCH(48, Cond.Z1),
+    BRANCH("_not_waiting", Cond.Z1),
     COPY(SplW.ALU_B0, 5),
-    # PC = 48
+    L("_not_waiting"),
     COPY(2, SplR.TMPA), # get high bit of event counter
     MODIFY(2, Mod.ROTATE_RIGHT),
     MODIFY(2, Mod.GET_LSB),
@@ -103,7 +100,7 @@ FIXED_FUNCTION_PROGRAM = [
     BRANCH(0, Cond.NE),
     POKE(SplW.TMPA, 1),
     BRANCH(0),
-]
+])
 
 class ChronoFigureInterface:
     def __init__(self):
@@ -212,8 +209,8 @@ class ChronoFigureInterface:
         if wait:
             prg = [
                 *prg,
-                POKE(SplW.EVENT_FIFO, 2),
-                BRANCH(0),
+                int(POKE(SplW.EVENT_FIFO, 2)),
+                int(BRANCH(0)),
             ]
 
         # stop the eventuator (and clear match FIFO)

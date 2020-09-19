@@ -151,7 +151,7 @@ class BRANCH(Insn):
 
         return ((int(self.code) << 16) + (int(self.cond) << 12) + self.dest)
 
-    def __str__(self):
+    def __repr__(self):
         return "BRANCH({!r}, {})".format(self.dest, str(self.cond))
 
 # copy a special register to a regular register or vice versa
@@ -179,7 +179,7 @@ class COPY(Insn):
     def __int__(self):
         return self._assemble(self.dest_special, self.special, self.reg)
 
-    def __str__(self):
+    def __repr__(self):
         if self.dest_special:
             return "COPY({}, {!r})".format(str(self.special), self.reg)
         else:
@@ -203,7 +203,7 @@ class POKE(Insn):
 
         return self._assemble((self.val>>8) & 1, self.special, self.val & 0xFF)
 
-    def __str__(self):
+    def __repr__(self):
         return "POKE({}, {!r})".format(str(self.special), self.val)
 
 # do a read-modify-write operation on a register
@@ -220,5 +220,89 @@ class MODIFY(Insn):
         mod = int(self.mod)
         return self._assemble(mod >> 7, mod & 0x7F, self.reg)
 
-    def __str__(self):
+    def __repr__(self):
         return "MODIFY({!r}, {})".format(self.reg, str(self.mod))
+
+# define a label for the assembler
+class L(Insn):
+    def __init__(self, label, org=None):
+        if not isinstance(label, str) or len(label) == 0:
+            raise ValueError("invalid label string")
+        if org is not None and (org < 0 or org >= 2**PC_WIDTH):
+            raise ValueError("location {} is out of range".format(org))
+        self.location = org
+        self.label = label
+        self.local = label[0] == "_" # can be reused after a non-local
+
+    def __repr__(self):
+        if self.location is None:
+            return "L({!r})".format(self.label)
+        else:
+            return "L({!r}, org={})".format(self.label, self.location)
+
+def ev_assemble(program_in, start_pc=1, return_labels=False):
+    if start_pc < 1 or start_pc >= 2**PC_WIDTH:
+        raise ValueError("start PC {} is out of range".format(start_pc))
+
+    pc = start_pc
+    last_nonlocal = ""
+    labels = {}
+    program = []
+    # find all the labels, assign their addresses, and copy the instructions to
+    # their final location
+    for instruction in program_in:
+        if not isinstance(instruction, Insn):
+            raise ValueError(
+                "pc={}: {!r} is not an Insn".format(instruction, pc))
+        # copy all the instructions so we can change the labels in them later
+        if isinstance(instruction, BRANCH):
+            b = BRANCH(instruction.dest, instruction.cond)
+            # delocalize local labels by appending the last non-local label
+            if isinstance(b.dest, str) and b.dest[0] == "_":
+                b.dest = "{}@{}".format(b.dest, last_nonlocal)
+            program.append(b)
+        elif isinstance(instruction, COPY):
+            if instruction.dest_special:
+                program.append(COPY(instruction.special, instruction.reg))
+            else:
+                program.append(COPY(instruction.reg, instruction.special))
+        elif isinstance(instruction, POKE):
+            program.append(POKE(instruction.special, instruction.val))
+        elif isinstance(instruction, MODIFY):
+            program.append(MODIFY(instruction.reg, instruction.mod))
+        else: # must be a label
+            l = L(instruction.label, org=instruction.location)
+            if not l.local:
+                last_nonlocal = l.label
+            else: # delocalize the local label
+                l.label = "{}@{}".format(l.label, last_nonlocal)
+            if l.location is None: # set its location if not already given
+                l.location = pc
+            if l.location < pc:
+                raise ValueError("pc={}: {} is before pc".format(pc, str(l)))
+            program.extend([BRANCH(0)]*(l.location-pc))
+            pc = l.location
+            labels[l.label] = l.location
+        if not isinstance(instruction, L):
+            pc += 1
+
+    assembled_program = []
+    # replace labels in branches and assemble the program
+    for instruction in program:
+        if isinstance(instruction, BRANCH) and isinstance(instruction.dest, str):
+            try:
+                instruction.dest = labels[instruction.dest]
+            except KeyError:
+                raise ValueError("pc={}: unknown label {!r}".format(
+                    start_pc+len(assembled_program), instruction.dest))
+        try:
+            assembled_program.append(int(instruction))
+        except Exception as e:
+            raise ValueError("pc={}: {} assembly error: {}".format(
+                start_pc+len(assembled_program), str(instruction),
+                    str(e))) from e
+
+    if not return_labels:
+        return assembled_program
+    else:
+        return assembled_program, labels

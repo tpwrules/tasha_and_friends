@@ -2,6 +2,7 @@ from nmigen import *
 from nmigen.sim.pysim import Simulator, Delay, Settle
 
 from .top import SimTop, SimCoreTop
+from ..isa import ev_assemble
 
 import functools
 
@@ -62,8 +63,8 @@ class SimCoreTest(BaseSimTest):
     # simulation process to load the given program into program memory
     def proc_load_prg(self, prg):
         def proc():
-            for addr, insn in enumerate(prg):
-                yield self.tb.prg_mem[addr+1].eq(int(insn))
+            for addr, insn in enumerate(ev_assemble(prg)):
+                yield self.tb.prg_mem[addr+1].eq(insn)
         return proc
 
     # simulation process to load the given program and start it
@@ -85,8 +86,8 @@ class SimTest(BaseSimTest):
     # simulation process to load the given program into program memory
     def proc_load_prg(self, prg):
         def proc():
-            for addr, insn in enumerate(prg):
-                yield self.tb.prg_mem[addr+1].eq(int(insn))
+            for addr, insn in enumerate(ev_assemble(prg)):
+                yield self.tb.prg_mem[addr+1].eq(insn)
         return proc
 
     # simulation process to load the given program and start it
