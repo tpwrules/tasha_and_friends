@@ -239,3 +239,55 @@ class BranchIndirectUnit(Elaboratable):
         ]
 
         return m
+
+# keep track of cycles between matches
+class MatchTimerUnit(Elaboratable):
+    def __init__(self):
+        # special bus signals
+        self.i_raddr = Signal(2)
+        self.i_re = Signal()
+        self.o_rdata = Signal(DATA_WIDTH)
+        self.i_waddr = Signal(2)
+        self.i_we = Signal()
+        self.i_wdata = Signal(DATA_WIDTH)
+
+        self.i_match_re = Signal()
+        self.i_match_cycle_count = Signal(32)
+
+    def elaborate(self, platform):
+        NUM_TIMERS = 3
+        m = Module()
+
+        running = Signal(NUM_TIMERS)
+        oneshot = Signal(NUM_TIMERS)
+        value = list(Signal(32, name="v{}".format(t)) for t in range(NUM_TIMERS))
+
+        with m.If(self.i_we):
+            with m.Switch(self.i_waddr):
+                for timer in range(NUM_TIMERS):
+                    with m.Case(timer):
+                        with m.If(self.i_wdata[0]):
+                            m.d.sync += value[timer].eq(0)
+                        m.d.sync += [
+                            running[timer].eq(self.i_wdata[1]),
+                            oneshot[timer].eq(self.i_wdata[2]),
+                        ]
+
+        with m.Switch(self.i_raddr):
+            for timer in range(NUM_TIMERS):
+                with m.Case(timer):
+                    m.d.comb += self.o_rdata.eq(value[timer])
+
+        last_match = Signal(32)
+        cycles_passed = Signal(32)
+        m.d.comb += cycles_passed.eq(self.i_match_cycle_count - last_match)
+        with m.If(self.i_match_re):
+            m.d.sync += last_match.eq(self.i_match_cycle_count)
+            for timer in range(NUM_TIMERS):
+                with m.If(running[timer] | oneshot[timer]):
+                    m.d.sync += [
+                        value[timer].eq(value[timer] + cycles_passed),
+                        oneshot[timer].eq(0),
+                    ]
+
+        return m

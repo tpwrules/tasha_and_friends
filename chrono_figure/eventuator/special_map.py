@@ -83,6 +83,18 @@ special_map = {
             ("CURR_PC", 0, "r"),
         ),
     },
+
+    "spl_match_timer": {
+        "width": 2,
+        "regs": (
+            ("MTIM0_VAL", 0, "r"),
+            ("MTIM0_CTL", 0, "w"),
+            ("MTIM1_VAL", 1, "r"),
+            ("MTIM1_CTL", 1, "w"),
+            ("MTIM2_VAL", 2, "r"),
+            ("MTIM2_CTL", 2, "w"),
+        )
+    }
 }
 
 # validate the units and calculate the base addresses

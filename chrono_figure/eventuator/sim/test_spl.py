@@ -283,5 +283,65 @@ class TestSpecial(SimTest, unittest.TestCase):
 
         return sets, chks, vals, self.proc_start_prg(prg)
 
+    @cycle_test
+    def test_spl_match_timer(self):
+        prg = [
+            POKE(SplW.MATCH_ENABLE, 1),
+            POKE(SplW.TMPA, 0), # waste time
+            BRANCH(0),
+
+            L("event0", org=4),
+            POKE(SplW.MTIM0_CTL, 3),
+            COPY(3, SplR.MTIM0_VAL),
+            BRANCH(0),
+
+            L("event1", org=12),
+            COPY(3, SplR.MTIM0_VAL),
+            POKE(SplW.MTIM0_CTL, 0),
+            BRANCH(0),
+
+            L("event2", org=20),
+            COPY(3, SplR.MTIM0_VAL),
+            POKE(SplW.MTIM0_CTL, 5),
+            COPY(3, SplR.MTIM0_VAL),
+            BRANCH(0),
+
+            L("event3", org=28),
+            COPY(3, SplR.MTIM0_VAL),
+            BRANCH(0),
+        ]
+        sets = {"mt": self.tb.i_match_info.match_type,
+                "mc": self.tb.i_match_info.cycle_count,
+                "we": self.tb.i_match_we}
+        chks = {"r3": self.tb.reg_mem[3],
+                "pc": self.core.prg_ctl.o_fetch_addr}
+        vals = [
+            ({}, {"pc": 0}),
+            ({}, {"pc": 1}),
+            ({}, {"pc": 1}),
+            ({"mt": 0, "mc": 0000, "we": 1}, {"pc": 2}),
+            ({"mt": 1, "mc": 1000, "we": 1}, {"pc": 2}),
+            ({"mt": 2, "mc": 3000, "we": 1}, {"pc": 3}),
+            ({"mt": 3, "mc": 7000, "we": 1}, {"pc": 3}),
+            ({"we": 0}, {"pc": 4}), ({}, {"pc": 4}),
+            ({}, {"pc": 5}), (),
+            ({}, {"pc": 6, "r3": 0}), (),
+
+            ({}, {"pc": 12, "r3": 0}), (),
+            ({}, {"pc": 13, "r3": 0}), (),
+            ({}, {"pc": 14, "r3": 1000}), (),
+
+            ({}, {"pc": 20, "r3": 1000}), (),
+            ({}, {"pc": 21, "r3": 1000}), (),
+            ({}, {"pc": 22, "r3": 1000}), (),
+            ({}, {"pc": 23, "r3": 1000}), (),
+
+            ({}, {"pc": 28, "r3": 0}), (),
+            ({}, {"pc": 29, "r3": 0}), (),
+            ({}, {"pc": 0, "r3": 4000}), (),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
 if __name__ == "__main__":
     unittest.main()
