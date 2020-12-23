@@ -1,5 +1,5 @@
 from nmigen import *
-from nmigen.sim.pysim import Simulator, Delay, Settle
+from nmigen.sim.core import Simulator, Delay, Settle
 
 from .top import SimTop, SimCoreTop
 from ..isa import ev_assemble

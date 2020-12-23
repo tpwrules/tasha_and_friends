@@ -1,6 +1,5 @@
 from nmigen import *
 from nmigen.lib.fifo import SyncFIFOBuffered
-from nmigen.sim.pysim import Simulator, Delay
 
 from chrono_figure.gateware.match_engine import make_match_info
 from ..eventuator import Eventuator

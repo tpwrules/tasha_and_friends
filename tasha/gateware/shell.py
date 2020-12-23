@@ -1,5 +1,6 @@
 # interface between the core and the platform-specific stuff
 from nmigen import *
+from nmigen.hdl.ast import ValueCastable
 from nmigen.lib.cdc import ResetSynchronizer
 
 from collections import namedtuple
@@ -75,7 +76,7 @@ class TASHAShell(Elaboratable):
             copied = []
             for fi, field in enumerate(signals._fields):
                 outside_signal = signals[fi]
-                if not isinstance(outside_signal, Value):
+                if not isinstance(outside_signal, (Value, ValueCastable)):
                     raise TypeError("{} must be a Value, not {!r}".format(
                         field, type(outside_signal)))
                 our_signal = Signal(len(outside_signal), name=field)

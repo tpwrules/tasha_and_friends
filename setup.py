@@ -20,7 +20,7 @@ setup(
 
         # somewhat temporary for now. not super sure if these are stable.
         "boneless @ git+https://github.com/whitequark/Boneless-CPU@bdf1eefccc86f4c4b23ad69172b4a441a29c29cf#egg=boneless",
-        "nmigen @ git+https://github.com/nmigen/nmigen@d964ba9cc45490b141c8c4c4c3d8add1a26a739d#egg=nmigen",
-        "nmigen_boards @ git+https://github.com/nmigen/nmigen-boards@f26a72913e9293ccb7f609a25ffa3bc0d33e0a79#egg=nmigen_boards",
+        "nmigen @ git+https://github.com/nmigen/nmigen@b466b724fe9f62140062afc9ecde9a920a261487#egg=nmigen",
+        "nmigen_boards @ git+https://github.com/nmigen/nmigen-boards@b40c3d6cb20081ff8941fc4addef92170ffb01a9#egg=nmigen_boards",
     ]
 )
