@@ -63,6 +63,7 @@ special_map = {
             ("MATCH_ADDR", 2, "r"),
             ("MATCH_DATA", 3, "r"),
             ("MATCH_ENABLE", 0, "w"),
+            ("MATCH_BUS_TRACE", 1, "w"),
         ),
     },
 

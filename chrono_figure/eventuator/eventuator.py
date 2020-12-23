@@ -34,6 +34,7 @@ class Eventuator(Elaboratable):
         self.i_match_valid = Signal()
         self.o_match_re = Signal()
         self.o_match_enable = Signal()
+        self.o_match_bus_trace = Signal()
 
         # match config access signals
         self.o_match_config = Signal(8)
@@ -137,6 +138,7 @@ class Eventuator(Elaboratable):
             # match info
             Cat(*self.spl_match_info.i_match_info).eq(Cat(*curr_match_info)),
             self.o_match_enable.eq(self.spl_match_info.o_match_enable),
+            self.o_match_bus_trace.eq(self.spl_match_info.o_match_bus_trace),
             # mod offset
             core.i_mod_offset_rd.eq(self.spl_mod_offset.o_mod_offset_rd),
             core.i_mod_offset_wr.eq(self.spl_mod_offset.o_mod_offset_wr),

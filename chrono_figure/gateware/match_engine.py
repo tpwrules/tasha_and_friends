@@ -4,6 +4,7 @@ from nmigen.lib.fifo import SyncFIFOBuffered
 # all the MATCH_ constants (and NUM_MATCHERS + MATCHER_BITS)
 from .match_info import *
 from .matcher import Matcher
+from .snes_bus import make_cart_signals
 
 from collections import namedtuple
 
@@ -31,6 +32,7 @@ class MatchEngine(Elaboratable):
         self.i_bus_addr = Signal(24)
         self.i_bus_data = Signal(8)
         self.i_cycle_count = Signal(32)
+        self.i_cart_signals = make_cart_signals()
 
         # config bus signals
         self.i_config = Signal(8)
@@ -41,6 +43,7 @@ class MatchEngine(Elaboratable):
         self.o_match_valid = Signal()
         self.i_match_re = Signal()
         self.i_reset_match_fifo = Signal()
+        self.i_match_bus_trace = Signal()
 
         self.match_fifo = SyncFIFOBuffered(width=72, depth=256)
 
@@ -119,11 +122,37 @@ class MatchEngine(Elaboratable):
             match_info.data.eq(mb_data),
         ]
 
+        # put together the match info used when tracing. it's just the raw cart
+        # signals arranged to fit the info with little regard for field meanings
+        sys_cycle = Signal(11)
+        m.d.sync += sys_cycle.eq(sys_cycle + 1)
+        trace_match_info = make_match_info()
+        cart = self.i_cart_signals
+        trace_data = Signal(32)
+        # the "cycle count" packs all the non-address signals so they can be
+        # sent in one word. of course this badly confuses the timers...
+        m.d.comb += trace_data.eq(Cat(
+            sys_cycle, # keep track of system cycle count to measure contiguity
+            cart.clock, # track bus clock signal
+            cart.rd, cart.wr, cart.pard, cart.pawr, # and async status signals
+            cart.periph_addr, # we want to know peripheral address too
+            cart.data, # and bus data, packed here to be sent with the rest
+        ))
+        m.d.comb += [
+            trace_match_info.match_type.eq(-1), # always the highest type
+            # we pack extra data into the cycle count so it can be sent in one
+            # word. of course this badly confuses the timers...
+            trace_match_info.cycle_count.eq(trace_data),
+            trace_match_info.addr.eq(cart.addr),
+            trace_match_info.data.eq(mb_data), # avoid the mux, it's never used
+        ]
+
         # put the match into a FIFO so it can be processed at the core's leisure
         assert(len(Cat(*match_info)) <= 72) # ensure it can fit
         m.d.comb += [
-            match_fifo.w_data.eq(Cat(*match_info)),
-            match_fifo.w_en.eq(match_valid),
+            match_fifo.w_data.eq(Mux(self.i_match_bus_trace,
+                Cat(*trace_match_info), Cat(*match_info))),
+            match_fifo.w_en.eq(match_valid | self.i_match_bus_trace),
 
             Cat(*self.o_match_info).eq(match_fifo.r_data),
             self.o_match_valid.eq(match_fifo.r_rdy),

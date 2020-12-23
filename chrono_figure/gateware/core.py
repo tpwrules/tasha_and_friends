@@ -4,14 +4,14 @@ from nmigen.back import verilog
 
 # all the MATCH_ constants (and NUM_MATCHERS + MATCHER_BITS)
 from .match_info import *
-from .snes_bus import SNESBus
+from .snes_bus import SNESBus, make_cart_signals
 from .match_engine import MatchEngine, make_match_info
 from chrono_figure.eventuator.eventuator import Eventuator
 from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 5
+GATEWARE_VERSION = 1000
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -60,6 +60,7 @@ class ChronoFigureCore(Elaboratable):
             match_engine.i_bus_addr.eq(bus.o_addr),
             match_engine.i_bus_data.eq(bus.o_data),
             match_engine.i_cycle_count.eq(bus.o_cycle_count),
+            Cat(*match_engine.i_cart_signals).eq(Cat(*bus.o_cart_signals)),
         ]
 
         # hook up the eventuator's inputs and outputs
@@ -67,6 +68,7 @@ class ChronoFigureCore(Elaboratable):
             Cat(*eventuator.i_match_info).eq(Cat(*match_engine.o_match_info)),
             eventuator.i_match_valid.eq(match_engine.o_match_valid),
             match_engine.i_match_re.eq(eventuator.o_match_re),
+            match_engine.i_match_bus_trace.eq(eventuator.o_match_bus_trace),
 
             event_fifo.w_data.eq(eventuator.o_event),
             event_fifo.w_en.eq(eventuator.o_event_we),

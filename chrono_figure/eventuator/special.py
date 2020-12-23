@@ -151,13 +151,21 @@ class MatchInfoUnit(Elaboratable):
 
         self.i_match_info = make_match_info()
         self.o_match_enable = Signal()
+        self.o_match_bus_trace = Signal()
 
     def elaborate(self, platform):
         m = Module()
 
+        trace_counter = Signal(9)
+        with m.If(trace_counter > 0):
+            m.d.sync += trace_counter.eq(trace_counter - 1)
+            m.d.comb += self.o_match_bus_trace.eq(1)
+
         with m.If(self.i_we):
-            # only one thing to write, so ignore the address
-            m.d.comb += self.o_match_enable.eq(1)
+            with m.If(self.i_waddr == SplW.MATCH_ENABLE_OFFSET):
+                m.d.comb += self.o_match_enable.eq(1)
+            with m.Elif(self.i_waddr == SplW.MATCH_BUS_TRACE_OFFSET):
+                m.d.sync += trace_counter.eq(self.i_wdata)
 
         with m.Switch(self.i_waddr):
             with m.Case(SplR.MATCH_TYPE_OFFSET):

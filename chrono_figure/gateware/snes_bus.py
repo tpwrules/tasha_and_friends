@@ -50,6 +50,8 @@ class SNESBus(Elaboratable):
         # for now we can only pick up reads so there's no access type data
         self.o_addr = Signal(24)
         self.o_data = Signal(8)
+        # raw cart signals for bus trace mode
+        self.o_cart_signals = make_cart_signals()
 
         # number of SNES master clock cycles since the sd2snes was powered on
         self.o_cycle_count = Signal(32)
@@ -67,6 +69,7 @@ class SNESBus(Elaboratable):
             m.submodules["ffsync_"+field] = \
                 FFSynchronizer(cart_signal, sync_signal)
             cart.append(sync_signal)
+            m.d.comb += self.o_cart_signals[fi].eq(sync_signal)
         cart = self.cart_signals._make(cart)
 
         # keep track of the SNES clock cycle so the system can time events

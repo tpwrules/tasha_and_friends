@@ -186,7 +186,8 @@ class ChronoFigureInterface:
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
             ADDR_CLEAR_SAVE_RAM, struct.pack("<I", CLEAR_SAVE_RAM_KEY))
 
-    def _read_event_fifo(self):
+    def read_event_fifo(self):
+        self._check_dev()
         event_data = []
         while True:
             new_data = struct.unpack("<128I", self.device.read_space(
@@ -197,8 +198,9 @@ class ChronoFigureInterface:
         return event_data
 
     # run a program on the eventuator and optionally wait for it to complete
-    def _exec_program(self, prg, wait=False):
-        if len(prg) > 250:
+    def exec_program(self, prg, wait=False):
+        self._check_dev()
+        if len(prg) > 1020:
             raise Exception("program is too long at {} insns".format(len(prg)))
 
         # add instructions so we know when the program ends
@@ -213,7 +215,7 @@ class ChronoFigureInterface:
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
             ADDR_MATCHER_CONFIG, (0).to_bytes(4, "little"))
         # clear out any old events
-        self._read_event_fifo()
+        self.read_event_fifo()
         # transfer in the program
         prg = struct.pack("<{}I".format(len(prg)), *(int(i) for i in prg))
         self.device.write_space(usb2snes.SPACE_CHRONO_FIGURE,
@@ -224,7 +226,7 @@ class ChronoFigureInterface:
         # wait for it to finish (if asked)
         if wait:
             while True:
-                event_data = self._read_event_fifo()
+                event_data = self.read_event_fifo()
                 if len(event_data) > 0 and event_data[0] == 2:
                     break
                 time.sleep(0.01)
@@ -265,7 +267,7 @@ class ChronoFigureInterface:
         prg = [POKE(SplW.MATCH_CONFIG_ADDR, 0)]
         for byte in config_data:
             prg.append(POKE(SplW.MATCH_CONFIG_DATA, byte))
-        self._exec_program(prg, wait=True)
+        self.exec_program(prg, wait=True)
 
     # reset the console and start measurements
     def start_measurement(self):
@@ -274,7 +276,7 @@ class ChronoFigureInterface:
         # assert reset so the console won't interrupt us
         self.assert_reset(True)
         # start the program running (and clear the event FIFO)
-        self._exec_program(FIXED_FUNCTION_PROGRAM)
+        self.exec_program(FIXED_FUNCTION_PROGRAM)
         self.last_data = [] # junk all the unparsed event pieces too
         # the only event with number 0 is the first event after reset
         self.next_event_counter = 0
@@ -289,7 +291,7 @@ class ChronoFigureInterface:
         got_events = []
 
         event_data = self.last_data # remember any half-received events
-        event_data.extend(self._read_event_fifo())
+        event_data.extend(self.read_event_fifo())
 
         while len(event_data) > 1: # each event is 2 words
             d0, d1 = event_data[:2]
