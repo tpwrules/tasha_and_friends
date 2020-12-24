@@ -44,6 +44,7 @@ special_map = {
         "width": 0,
         "regs": (
             ("EVENT_FIFO", 0, "w"),
+            ("EVENT_FIFO_STATUS", 0, "r"),
         ),
     },
 

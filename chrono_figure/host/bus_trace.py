@@ -3,29 +3,34 @@ import sys
 
 from chrono_figure.host.interface import *
 
-# list of addresses that will start a trace when read
-trace_addrs = [
-    0x83f7, # reset handler
-    0xf3bd, # nmi handler
-]
-
 TRACE_PROGRAM = ev_assemble([
     L("start", org=1),
     POKE(SplW.MATCH_BUS_TRACE, 0), # ensure tracing is stopped
+    # number of trace events we can queue before the buffers fill up
+    POKE(SplW.IMM_B0, 270),
+    POKE(SplW.IMM_B1, 1),
+    COPY(1, SplR.IMM_VAL),
+    POKE(SplW.MOFF_WR_TEMP, 1), # copy to counter
+    MODIFY(1, Mod.COPY),
     POKE(SplW.MATCH_ENABLE, 1), # start matching
-    BRANCH(0), # and wait...
-
-    L("trace_start_handler", org=12),
-    # request as many events as we can to get a continuous stream before our
-    # buffers fill up
-    POKE(SplW.MATCH_BUS_TRACE, 280),
-    BRANCH(0), # and wait for them to happen
+    COPY(SplW.MATCH_BUS_TRACE, 1), # and tracing
+    BRANCH(0),
 
     L("trace_event_handler", org=508),
     COPY(0, SplR.MATCH_CYCLE_COUNT), # send off trace data
     COPY(SplW.EVENT_FIFO, 0),
     COPY(0, SplR.MATCH_ADDR),
     COPY(SplW.EVENT_FIFO, 0),
+    MODIFY(2, Mod.DEC), # process the next event if we haven't finished this run
+    BRANCH(0, Cond.NZ),
+    POKE(SplW.MOFF_WR_TEMP, 1), # reset counter
+    MODIFY(1, Mod.COPY),
+    L("not_empty"), # wait for event FIFO to empty before restarting tracing
+    COPY(3, SplR.EVENT_FIFO_STATUS),
+    MODIFY(3, Mod.TEST_LSB),
+    BRANCH("not_empty", Cond.Z),
+    # now we can restart tracing and ensure we have room to put the results
+    COPY(SplW.MATCH_BUS_TRACE, 1),
     BRANCH(0),
 ])
 
@@ -79,7 +84,7 @@ cf.connect()
 # stop saves so our weirdness doesn't screw with the user's saves
 cf.prevent_saving(True)
 # trigger match 1 for each trace address
-cf.configure_matchers(list((addr, 1) for addr in trace_addrs))
+cf.configure_matchers([])
 cf.assert_reset(True)
 # erase save memory to ensure a clean start
 cf.destroy_save_ram()

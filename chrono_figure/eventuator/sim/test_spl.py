@@ -46,7 +46,6 @@ class TestSpecial(SimTest, unittest.TestCase):
             *[()]*5,
             ({"re": 1}, {"rdy": 1, "data": 69}),
             ({"re": 0}, {"rdy": 0}),
-            ({}, {}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -74,7 +73,41 @@ class TestSpecial(SimTest, unittest.TestCase):
             ({"re": 1}, {"rdy": 1, "pc": 5, "data": 69}), ({"re": 0}, {}),
             ({}, {"rdy": 1, "pc": 6}), (),
             ({}, {"rdy": 1, "pc": 6}), (),
-            ({}, {}),
+        ]
+
+        return sets, chks, vals, self.proc_start_prg(prg)
+
+    @cycle_test
+    def test_spl_event_fifo_status(self):
+        prg = [
+            COPY(3, SplR.EVENT_FIFO_STATUS),
+            POKE(SplW.EVENT_FIFO, 69),
+            COPY(3, SplR.EVENT_FIFO_STATUS),
+            POKE(SplW.EVENT_FIFO, 70),
+            POKE(SplW.EVENT_FIFO, 71),
+            POKE(SplW.EVENT_FIFO, 72),
+            COPY(3, SplR.EVENT_FIFO_STATUS),
+            POKE(SplW.EVENT_FIFO, 73),
+            COPY(3, SplR.EVENT_FIFO_STATUS),
+            COPY(3, SplR.EVENT_FIFO_STATUS),
+        ]
+        sets = {"re": self.tb.i_event_re}
+        chks = {"r3": self.tb.reg_mem[3],
+                "data": self.tb.o_event,
+                "pc": self.core.prg_ctl.o_fetch_addr}
+        vals = [
+            *[()]*5,
+            ({}, {"r3": 1, "pc": 3}), (),
+            ({}, {"pc": 4}), (),
+            ({}, {"r3": 0, "pc": 5}), (),
+            ({}, {"pc": 6}), (),
+            ({}, {"pc": 7}), (),
+            ({}, {"pc": 8}), (),
+            ({"re": 1}, {"r3": 2, "pc": 8, "data": 69}), ({"re": 0}, {}),
+            ({}, {"pc": 9}), (),
+            ({"re": 1}, {"r3": 2, "pc": 10, "data": 70}), ({"re": 0}, {}),
+            ({}, {"pc": 11}), (),
+            ({}, {"r3": 0, "pc": 0}), (),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)

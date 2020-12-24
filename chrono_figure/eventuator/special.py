@@ -89,18 +89,22 @@ class EventFIFOUnit(Elaboratable):
         self.o_event = Signal(32)
         self.o_event_we = Signal()
         self.i_event_space = Signal()
+        self.i_event_empty = Signal()
         self.o_ctl_pause = Signal()
 
     def elaborate(self, platform):
         m = Module()
 
-        m.d.sync += [
+        m.d.comb += [
             self.o_event.eq(self.i_wdata),
             self.o_event_we.eq(self.i_we & self.i_event_space),
         ]
         # tell the processor to stop advancing the PC (and thus retry the
         # instruction) if we don't have space to store the data
         m.d.comb += self.o_ctl_pause.eq(self.i_we & ~self.i_event_space)
+
+        m.d.comb += self.o_rdata.eq(
+            Cat(self.i_event_empty, ~self.i_event_space))
 
         return m
 

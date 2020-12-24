@@ -45,6 +45,7 @@ class Eventuator(Elaboratable):
         self.o_event = Signal(32)
         self.o_event_we = Signal()
         self.i_event_space = Signal() # space for more valid events
+        self.i_event_empty = Signal() # nothing in the event fifo
 
         self.spl_alu_frontend = ALUFrontendUnit()
         self.spl_temp = TemporaryUnit()
@@ -129,6 +130,7 @@ class Eventuator(Elaboratable):
             self.o_event.eq(self.spl_event_fifo.o_event),
             self.o_event_we.eq(self.spl_event_fifo.o_event_we),
             self.spl_event_fifo.i_event_space.eq(self.i_event_space),
+            self.spl_event_fifo.i_event_empty.eq(self.i_event_empty),
             core.i_ctl_pause.eq(self.spl_event_fifo.o_ctl_pause),
             # matcher config
             self.o_match_config.eq(self.spl_match_config.o_match_config),

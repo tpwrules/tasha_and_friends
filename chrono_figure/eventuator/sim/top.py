@@ -112,6 +112,7 @@ class SimTop(Elaboratable):
             event_fifo.w_data.eq(ev.o_event),
             event_fifo.w_en.eq(ev.o_event_we),
             ev.i_event_space.eq(event_fifo.w_rdy),
+            ev.i_event_empty.eq(~event_fifo.r_rdy),
 
             self.o_event.eq(event_fifo.r_data),
             self.o_event_valid.eq(event_fifo.r_rdy),

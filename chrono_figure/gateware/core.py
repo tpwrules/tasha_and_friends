@@ -11,7 +11,7 @@ from chrono_figure.eventuator import isa
 
 # will probably always be manually incremented because it's related to the
 # modules in the sd2snes and its firmware as well
-GATEWARE_VERSION = 1000
+GATEWARE_VERSION = 1002
 
 class ChronoFigureCore(Elaboratable):
     def __init__(self, cart_signals):
@@ -73,6 +73,7 @@ class ChronoFigureCore(Elaboratable):
             event_fifo.w_data.eq(eventuator.o_event),
             event_fifo.w_en.eq(eventuator.o_event_we),
             eventuator.i_event_space.eq(event_fifo.w_rdy),
+            eventuator.i_event_empty.eq(~event_fifo.r_rdy),
         ]
 
         wiggle = Signal()

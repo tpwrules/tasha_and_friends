@@ -193,7 +193,7 @@ class ChronoFigureInterface:
             new_data = struct.unpack("<128I", self.device.read_space(
                 usb2snes.SPACE_CHRONO_FIGURE, ADDR_EVENT_FIFO, 512))
             event_data.extend(new_data[1:new_data[0]+1])
-            if new_data[0] < 127:
+            if new_data[0] < 127 or len(event_data) > 10000:
                 break # FIFO can't have more data
         return event_data
 
