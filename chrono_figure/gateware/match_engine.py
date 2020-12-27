@@ -3,7 +3,7 @@ from nmigen.lib.fifo import SyncFIFOBuffered
 
 # all the MATCH_ constants (and NUM_MATCHERS + MATCHER_BITS)
 from .match_info import *
-from .matcher import Matcher
+from .multimatcher import MultiMatcher
 from .snes_bus import make_cart_signals
 
 from collections import namedtuple
@@ -36,7 +36,7 @@ class MatchEngine(Elaboratable):
         self.i_cart_signals = make_cart_signals()
 
         # config bus signals
-        self.i_config = Signal(8)
+        self.i_config = Signal(32)
         self.i_config_addr = Signal(10)
         self.i_config_we = Signal()
 
@@ -47,81 +47,43 @@ class MatchEngine(Elaboratable):
         self.i_match_bus_trace = Signal()
 
         self.match_fifo = SyncFIFOBuffered(width=72, depth=256)
+        self.multimatcher = MultiMatcher()
 
     def elaborate(self, platform):
         m = Module()
 
         m.submodules.match_fifo = match_fifo = \
             ResetInserter(self.i_reset_match_fifo)(self.match_fifo)
+        m.submodules.multimatcher = multimatcher = self.multimatcher
 
-        # wire up config byte and generate byte selects
-        mb_config_data = Signal(8)
-        mb_config_addr = Signal(MATCHER_BITS)
-        mb_config_we = Signal(4) # one line per byte
-        m.d.sync += [
-            mb_config_data.eq(self.i_config),
-            mb_config_addr.eq(self.i_config_addr[2:]),
-            mb_config_we[0].eq(self.i_config_we & (self.i_config_addr[:2] == 0)),
-            mb_config_we[1].eq(self.i_config_we & (self.i_config_addr[:2] == 1)),
-            mb_config_we[2].eq(self.i_config_we & (self.i_config_addr[:2] == 2)),
-            mb_config_we[3].eq(self.i_config_we & (self.i_config_addr[:2] == 3)),
+        # wire up the multimatcher
+        multimatched_type = Signal(MATCH_TYPE_BITS)
+        m.d.comb += [
+            multimatcher.i_bus_valid.eq(self.i_bus_valid),
+            multimatcher.i_bus_addr.eq(self.i_bus_addr),
+            multimatcher.i_bus_data.eq(self.i_bus_data),
+            multimatcher.i_bus_write.eq(self.i_bus_write),
+
+            multimatcher.i_config.eq(self.i_config),
+            multimatcher.i_config_addr.eq(self.i_config_addr),
+            multimatcher.i_config_we.eq(self.i_config_we),
+
+            multimatched_type.eq(multimatcher.o_match_type),
         ]
-
-        # buffer the matcher input signals to ensure the best timing
-        mb_addr = Signal(24)
-        mb_data = Signal(8)
-        mb_valid = Signal()
-        # ignore writes on bus because we only expect reads for now
-        m.d.sync += mb_valid.eq(self.i_bus_valid & ~self.i_bus_write)
-        with m.If(self.i_bus_valid & ~self.i_bus_write):
-            m.d.sync += [
-                mb_addr.eq(self.i_bus_addr),
-                mb_data.eq(self.i_bus_data),
-            ]
-
-        # wire up all the matchers
-        matcher_results = []
-        for matcher_num in range(NUM_MATCHERS):
-            matcher = Matcher()
-            m.submodules["matcher_{}".format(matcher_num)] = matcher
-            m.d.comb += [
-                matcher.i_snes_addr.eq(mb_addr),
-                matcher.i_snes_rd.eq(mb_valid),
-
-                matcher.i_config_data.eq(mb_config_data),
-                matcher.i_config_we.eq(Mux(mb_config_addr == matcher_num,
-                    mb_config_we, 0)),
-            ]
-            matcher_results.append(matcher.o_match_type)
-
-        # OR all the results together in a massive tree. 4 at a time
-        # theoretically will use one LUT4?
-        to_or = matcher_results
-        ored = []
-        while len(to_or) > 1:
-            while len(to_or) > 0:
-                expr = to_or.pop()
-                for _ in range(min(3, len(to_or))): # OR in three more
-                    expr = expr | to_or.pop()
-                s = Signal(MATCH_TYPE_BITS)
-                m.d.sync += s.eq(expr)
-                ored.append(s)
-            to_or = ored
-            ored = []
 
         # the final output. will be 0 if no matchers matched, or the type of
         # that match otherwise.
-        matched_type = to_or[0]
+        matched_type = Signal(MATCH_TYPE_BITS)
         match_valid = Signal()
         match_info = make_match_info()
         m.d.comb += [
+            matched_type.eq(multimatched_type),
             match_valid.eq(matched_type != 0),
             match_info.match_type.eq(matched_type),
+            # the inputs remain valid until all the matchers finish matching
             match_info.cycle_count.eq(self.i_cycle_count),
-            # there should be enough timing leeway that there won't be another
-            # bus transaction before the match is finished processing? maybe?
-            match_info.addr.eq(mb_addr),
-            match_info.data.eq(mb_data),
+            match_info.addr.eq(self.i_bus_addr),
+            match_info.data.eq(self.i_bus_data),
         ]
 
         # put together the match info used when tracing. it's just the raw cart
@@ -131,8 +93,6 @@ class MatchEngine(Elaboratable):
         trace_match_info = make_match_info()
         cart = self.i_cart_signals
         trace_data = Signal(32)
-        # the "cycle count" packs all the non-address signals so they can be
-        # sent in one word. of course this badly confuses the timers...
         m.d.comb += trace_data.eq(Cat(
             sys_cycle, # keep track of system cycle count to measure contiguity
             cart.clock, # track bus clock signal
@@ -146,7 +106,7 @@ class MatchEngine(Elaboratable):
             # word. of course this badly confuses the timers...
             trace_match_info.cycle_count.eq(trace_data),
             trace_match_info.addr.eq(cart.addr),
-            trace_match_info.data.eq(mb_data), # avoid the mux, it's never used
+            trace_match_info.data.eq(self.i_bus_data), # avoid the mux
         ]
 
         # put the match into a FIFO so it can be processed at the core's leisure

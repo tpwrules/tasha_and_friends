@@ -37,7 +37,7 @@ class Eventuator(Elaboratable):
         self.o_match_bus_trace = Signal()
 
         # match config access signals
-        self.o_match_config = Signal(8)
+        self.o_match_config = Signal(32)
         self.o_match_config_addr = Signal(10)
         self.o_match_config_we = Signal()
 

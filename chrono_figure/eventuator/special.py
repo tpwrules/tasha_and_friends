@@ -119,7 +119,7 @@ class MatcherConfigUnit(Elaboratable):
         self.i_we = Signal()
         self.i_wdata = Signal(DATA_WIDTH)
 
-        self.o_match_config = Signal(8)
+        self.o_match_config = Signal(32)
         self.o_match_config_addr = Signal(10)
         self.o_match_config_we = Signal()
 

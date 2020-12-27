@@ -6,6 +6,26 @@ import time
 from . import usb2snes
 from ..gateware import core as gateware
 from chrono_figure.eventuator.isa import *
+from chrono_figure.gateware.match_info import *
+
+# utilities for building matcher configuration
+def get_bits(source, bits):
+    bits = sorted(tuple(bits))
+    out = 0
+    for bi, bit_num in enumerate(bits):
+        bit = 1 if source & (1 << bit_num) else 0
+        out |= bit << bi
+    return out
+
+def validate_matcher_config(config):
+    address, match_type = config
+    valid_address = int(address) & 0xFFFFFF
+    if valid_address != address:
+        raise CFInterfaceError("invalid address '{}'".format(address))
+    valid_match_type = int(match_type) & (2**MATCH_TYPE_BITS-1)
+    if valid_match_type != match_type:
+        raise CFInterfaceError("invalid match type '{}'".format(match_type))
+    return valid_address, valid_match_type
 
 # usb2snes expected firmware version
 FIRMWARE_VERSION = 0xC10A0302
@@ -231,43 +251,47 @@ class ChronoFigureInterface:
                     break
                 time.sleep(0.01)
 
-    def _make_matcher_config(self, address, match_type):
-        valid_address = int(address) & 0xFFFFFF
-        if valid_address != address:
-            raise CFInterfaceError("invalid address '{}'".format(address))
-        valid_match_type = int(match_type) & (2**gateware.MATCH_TYPE_BITS-1)
-        if valid_match_type != match_type:
-            raise CFInterfaceError("invalid match type '{}'".format(match_type))
-        return struct.pack("<I", (valid_address + (valid_match_type<<24)))
-
     # configure the matchers with an iterable of (address, match_type) tuples.
     # if there are less matchers than the number of configurations, the
     # remaining matchers are disabled.
     def configure_matchers(self, configs):
         self._check_dev()
 
-        # pack configuration into words
-        config_data = []
+        # sort configurations by match keys
+        match_keys = {}
         for config in configs:
-            address, match_type = config
-            config_data.append(self._make_matcher_config(address, match_type))
+            address, match_type = validate_matcher_config(config)
+            key_bits = get_bits(address, KEY_BITS)
+            value_bits = get_bits(address, VALUE_BITS)
+            match_keys.setdefault(key_bits, []).append((value_bits, match_type))
 
-        # make sure we have enough matchers for the configurations
-        num_matchers = gateware.NUM_MATCHERS
-        if len(config_data) > num_matchers:
-            raise CFInterfaceError("attempted to configure {} matchers, but "
-                "the gateware has only {}".format(
-                    len(config_data), num_matchers))
-
-        # set remaining matchers to 0 = disabled
-        config_data.append(b'\x00'*(4*(num_matchers-len(config_data))))
-        config_data = b''.join(config_data)
+        # put matches into the appropriate location
+        match_config = [0]*(2**MATCH_MEM_ADDR_WIDTH)
+        for match_key, configs in match_keys.items():
+            key_start = match_key << KEY_MATCHES_WIDTH
+            if len(configs) > 2**KEY_MATCHES_WIDTH:
+                raise CFInterfaceError("attempted to put more than {} matches "
+                    "under key {}".format(2**KEY_MATCHES_WIDTH, match_key))
+            for ci, config in enumerate(configs):
+                value_bits, match_type = config
+                config = value_bits | (match_type << len(VALUE_BITS))
+                match_config[key_start|ci] = config
 
         # build and run a program to configure the matchers
+        match_config = match_config[::-1]
         prg = [POKE(SplW.MATCH_CONFIG_ADDR, 0)]
-        for byte in config_data:
-            prg.append(POKE(SplW.MATCH_CONFIG_DATA, byte))
-        self.exec_program(prg, wait=True)
+        while len(match_config) > 0:
+            while len(prg) < 1000 and len(match_config) > 0:
+                datum = match_config.pop()
+                if datum < 512:
+                    prg.append(POKE(SplW.MATCH_CONFIG_DATA, datum))
+                else:
+                    for num, byte in enumerate(struct.pack("<I", datum)):
+                        prg.append(POKE(getattr(SplW, "IMM_B"+str(num)), byte))
+                    prg.append(COPY(0, SplR.IMM_VAL))
+                    prg.append(COPY(SplW.MATCH_CONFIG_DATA, 0))
+            self.exec_program(prg, wait=True)
+            prg = []
 
     # reset the console and start measurements
     def start_measurement(self):

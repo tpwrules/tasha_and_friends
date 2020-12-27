@@ -11,3 +11,9 @@ MATCH_TYPE_BITS = 6 # number of bits required to represent the above (max 8)
 
 NUM_MATCHERS = 32 # how many match engines are there?
 MATCHER_BITS = 5 # number of bits required to represent the above (max 8)
+
+# which bits of the address are used to look up in the multimatcher
+KEY_BITS = {0, 1, 2, 3, 4}
+VALUE_BITS = set(range(24))-KEY_BITS
+MATCH_MEM_ADDR_WIDTH = 9 # one RAMB16
+KEY_MATCHES_WIDTH = MATCH_MEM_ADDR_WIDTH - len(KEY_BITS)
