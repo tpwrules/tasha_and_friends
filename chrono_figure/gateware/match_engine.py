@@ -31,6 +31,7 @@ class MatchEngine(Elaboratable):
         self.i_bus_valid = Signal()
         self.i_bus_addr = Signal(24)
         self.i_bus_data = Signal(8)
+        self.i_bus_write = Signal()
         self.i_cycle_count = Signal(32)
         self.i_cart_signals = make_cart_signals()
 
@@ -70,8 +71,9 @@ class MatchEngine(Elaboratable):
         mb_addr = Signal(24)
         mb_data = Signal(8)
         mb_valid = Signal()
-        m.d.sync += mb_valid.eq(self.i_bus_valid)
-        with m.If(self.i_bus_valid):
+        # ignore writes on bus because we only expect reads for now
+        m.d.sync += mb_valid.eq(self.i_bus_valid & ~self.i_bus_write)
+        with m.If(self.i_bus_valid & ~self.i_bus_write):
             m.d.sync += [
                 mb_addr.eq(self.i_bus_addr),
                 mb_data.eq(self.i_bus_data),
