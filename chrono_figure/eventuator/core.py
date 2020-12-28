@@ -14,7 +14,7 @@ class ProgramControl(Elaboratable):
         self.i_ctl_pause = Signal() # stop advancing the PC
 
         self.i_branch = Signal() # execute branch this cycle
-        self.i_branch_target = Signal(PC_WIDTH)
+        self.i_branch_target = Signal(PC_WIDTH) # sampled the cycle before
 
         self.o_prg_addr = Signal(PC_WIDTH) # what instruction to read next
         self.i_prg_data = Signal(INSN_WIDTH) # the read instruction
@@ -58,11 +58,18 @@ class ProgramControl(Elaboratable):
 
             # intended for debugging
             m.d.sync += self.o_fetch_addr.eq(self.o_prg_addr)
-        
+
+        branch_target = Signal(PC_WIDTH)
+        branch_to_stop = Signal()
+        m.d.sync += [
+            branch_target.eq(self.i_branch_target),
+            branch_to_stop.eq(self.i_branch_target == 0),
+        ]
+
         stopping = Signal()
         stopped = Signal()
         # stop the processor if we branch to address 0
-        m.d.comb += stopping.eq(self.i_branch & (self.i_branch_target == 0))
+        m.d.comb += stopping.eq(self.i_branch & branch_to_stop)
         m.d.comb += self.o_ctl_run.eq(~(stopping | stopped))
         m.d.sync += stopped.eq(stopping | stopped)
 
@@ -94,7 +101,7 @@ class ProgramControl(Elaboratable):
                 m.d.sync += stopped.eq(1)
             with m.Elif(self.i_branch): # is the processor trying to branch?
                 # yes, set the PC to the target
-                m.d.comb += next_pc.eq(self.i_branch_target)
+                m.d.comb += next_pc.eq(branch_target)
             with m.Else(): # keep on going as before
                 m.d.comb += next_pc.eq(curr_pc+(self.i_ctl_pause ^ 1))
 
@@ -179,7 +186,7 @@ class EventuatorCore(Elaboratable):
         ]
         # instruction field selection
         # branch target for BRANCH
-        cyc_wr_target = cyc_wr_insn[:PC_WIDTH]
+        cyc_rd_target = cyc_rd_insn[:PC_WIDTH]
         # branch condition for BRANCH
         cyc_wr_cond = cyc_wr_insn[PC_WIDTH:PC_WIDTH+COND_WIDTH]
         # selection bit; sign for POKE or direction for COPY
@@ -199,7 +206,7 @@ class EventuatorCore(Elaboratable):
         # fixed purpose instruction fields
         m.d.comb += [
             prg_ctl.i_branch_target.eq(
-                Mux(self.i_branch_ind, self.i_branch_ind_target, cyc_wr_target)),
+                Mux(self.i_branch_ind, self.i_branch_ind_target, cyc_rd_target)),
             self.o_reg_raddr.eq(cyc_rd_reg),
             self.o_spl_raddr.eq(cyc_rd_spl),
             self.o_spl_waddr.eq(cyc_wr_spl),
