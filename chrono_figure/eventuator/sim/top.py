@@ -33,7 +33,7 @@ class SimCoreTop(Elaboratable):
             core.i_prg_data.eq(ev_prg_rd.data),
 
             ev_reg_rd.addr.eq(core.o_reg_raddr),
-            ev_reg_rd.en.eq(core.o_reg_re),
+            ev_reg_rd.en.eq(1),
             core.i_reg_rdata.eq(ev_reg_rd.data),
 
             ev_reg_wr.addr.eq(core.o_reg_waddr),
@@ -91,7 +91,7 @@ class SimTop(Elaboratable):
             ev.i_prg_data.eq(ev_prg_rd.data),
 
             ev_reg_rd.addr.eq(ev.o_reg_raddr),
-            ev_reg_rd.en.eq(ev.o_reg_re),
+            ev_reg_rd.en.eq(1),
             ev.i_reg_rdata.eq(ev_reg_rd.data),
 
             ev_reg_wr.addr.eq(ev.o_reg_waddr),

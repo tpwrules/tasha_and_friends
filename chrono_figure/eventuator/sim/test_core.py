@@ -95,23 +95,22 @@ class TestCore(SimCoreTest, unittest.TestCase):
                 "sre": self.core.o_spl_re,
                 "swe": self.core.o_spl_we,
                 "rraddr": self.core.o_reg_raddr,
-                "rre": self.core.o_reg_re,
                 "rwe": self.core.o_reg_we}
         vals = [
             # program is starting
-            ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
+            ({}, {"sre": 0, "swe": 0, "rwe": 0}),
             # first COPY reads from the regular reg
-            ({}, {"rre": 1, "rwe": 0, "rraddr": 1}),
+            ({}, {"rwe": 0, "rraddr": 1}),
             # then writes what it got to the special reg
             ({}, {"sre": 0, "swe": 1, "swaddr": SplW.TMPA,}),
             # now try it once more
-            ({}, {"rre": 1, "rwe": 0, "rraddr": 2}),
+            ({}, {"rwe": 0, "rraddr": 2}),
             ({}, {"sre": 0, "swe": 1, "swaddr": SplW.TMPB,}),
             # and again to be sure
-            ({}, {"rre": 1, "rwe": 0, "rraddr": 3}),
+            ({}, {"rwe": 0, "rraddr": 3}),
             ({}, {"sre": 0, "swe": 1, "swaddr": SplW.TMPA,}),
             # program stopped, no more activity
-            ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
+            ({}, {"sre": 0, "swe": 0, "rwe": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -128,23 +127,22 @@ class TestCore(SimCoreTest, unittest.TestCase):
                 "sre": self.core.o_spl_re,
                 "swe": self.core.o_spl_we,
                 "rwaddr": self.core.o_reg_waddr,
-                "rre": self.core.o_reg_re,
                 "rwe": self.core.o_reg_we}
         vals = [
             # program is starting
-            ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
+            ({}, {"sre": 0, "swe": 0, "rwe": 0}),
             # first COPY reads from the special reg
             ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,}), (),
             # then while the next COPY reads, the first COPY writes
             ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPA,
-                  "rre": 0, "rwe": 1, "rwaddr": 1}), (),
+                            "rwe": 1, "rwaddr": 1}), (),
             # and again to be sure
             ({}, {"sre": 1, "swe": 0, "sraddr": SplR.TMPB,
-                  "rre": 0, "rwe": 1, "rwaddr": 2}), (),
+                            "rwe": 1, "rwaddr": 2}), (),
             # the last COPY is now writing
-            ({}, {"rre": 0, "rwe": 1, "rwaddr": 3}), (),
+            ({}, {"rwe": 1, "rwaddr": 3}), (),
             # program stopped, no more activity
-            ({}, {"sre": 0, "swe": 0, "rre": 0, "rwe": 0}),
+            ({}, {"sre": 0, "swe": 0, "rwe": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -189,28 +187,27 @@ class TestCore(SimCoreTest, unittest.TestCase):
         sets = {"do": self.core.i_do_mod}
         chks = {"rraddr": self.core.o_reg_raddr,
                 "rwaddr": self.core.o_reg_waddr,
-                "rre": self.core.o_reg_re,
                 "rwe": self.core.o_reg_we,
                 "mod": self.core.o_mod,
                 "type": self.core.o_mod_type}
         vals = [
             # program is starting
-            ({"do": 1}, {"rre": 0, "rwe": 0, "mod": 0}),
+            ({"do": 1}, {"rwe": 0, "mod": 0}),
             # first MODIFY reads from the register
-            ({}, {"rre": 1, "rwe": 0, "mod": 0, "rraddr": 1}),
+            ({}, {"rwe": 0, "mod": 0, "rraddr": 1}),
             # then it does the modification
-            ({}, {"rre": 0, "rwe": 0, "mod": 1, "type": Mod.COPY}),
+            ({}, {"rwe": 0, "mod": 1, "type": Mod.COPY}),
             # and finally writes it back while the next MODIFY reads a register
-            ({}, {"rre": 1, "rwe": 1, "mod": 0, "rraddr": 2, "rwaddr": 1}),
+            ({}, {"rwe": 1, "mod": 0, "rraddr": 2, "rwaddr": 1}),
             # and does its modification
-            ({}, {"rre": 0, "rwe": 0, "mod": 1, "type": Mod.COPY}),
+            ({}, {"rwe": 0, "mod": 1, "type": Mod.COPY}),
             # and again so we are certain
-            ({}, {"rre": 1, "rwe": 1, "mod": 0, "rraddr": 3, "rwaddr": 2}),
-            ({}, {"rre": 0, "rwe": 0, "mod": 1, "type": Mod.COPY}),
+            ({}, {"rwe": 1, "mod": 0, "rraddr": 3, "rwaddr": 2}),
+            ({}, {"rwe": 0, "mod": 1, "type": Mod.COPY}),
             # the final write
-            ({}, {"rre": 0, "rwe": 1, "mod": 0}),
+            ({}, {"rwe": 1, "mod": 0}),
             # program stopped, no more activity
-            ({}, {"rre": 0, "rwe": 0, "mod": 0}),
+            ({}, {"rwe": 0, "mod": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)
@@ -233,7 +230,6 @@ class TestCore(SimCoreTest, unittest.TestCase):
         sets = {"do": self.core.i_do_mod}
         chks = {"rraddr": self.core.o_reg_raddr,
                 "rwaddr": self.core.o_reg_waddr,
-                "rre": self.core.o_reg_re,
                 "rwe": self.core.o_reg_we,
                 "sraddr": self.core.o_spl_raddr,
                 "swaddr": self.core.o_spl_waddr,
@@ -244,45 +240,37 @@ class TestCore(SimCoreTest, unittest.TestCase):
                 "type": self.core.o_mod_type}
         vals = [
             # program is starting
-            ({"do": 1}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({"do": 1}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
             # MODIFY
-            ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
-                  "rraddr": 1}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 1,
-                  "type": Mod.COPY}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0, "rraddr": 1}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 1, "type": Mod.COPY}),
             # COPY
-            ({}, {"rre": 1, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
+            ({}, {"rwe": 1, "sre": 0, "swe": 0, "mod": 0,
                   "rraddr": 2, "rwaddr": 1}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
-                  "swaddr": SplW.TMPA}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 1, "mod": 0, "swaddr": SplW.TMPA}),
             # BRANCH
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
             # POKE
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 1, "mod": 0,
                   "swaddr": SplW.TMPA, "swdata": 5}),
             # MODIFY
-            ({}, {"rre": 1, "rwe": 0, "sre": 0, "swe": 0, "mod": 0,
-                  "rraddr": 6}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 1,
-                  "type": Mod.COPY}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0, "rraddr": 6}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 1, "type": Mod.COPY}),
             # BRANCH
-            ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
-                  "rwaddr": 6}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 1, "sre": 0, "swe": 0, "mod": 0, "rwaddr": 6}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
             # POKE
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 1, "mod": 0,
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 1, "mod": 0,
                   "swaddr": SplW.TMPB, "swdata": 3}),
             # COPY
-            ({}, {"rre": 0, "rwe": 0, "sre": 1, "swe": 0, "mod": 0,
-                  "sraddr": SplR.TMPA}),
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
-            ({}, {"rre": 0, "rwe": 1, "sre": 0, "swe": 0, "mod": 0,
-                  "rwaddr": 4}),
+            ({}, {"rwe": 0, "sre": 1, "swe": 0, "mod": 0, "sraddr": SplR.TMPA}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 1, "sre": 0, "swe": 0, "mod": 0, "rwaddr": 4}),
             # program stopped, no more activity
-            ({}, {"rre": 0, "rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
+            ({}, {"rwe": 0, "sre": 0, "swe": 0, "mod": 0}),
         ]
 
         return sets, chks, vals, self.proc_start_prg(prg)

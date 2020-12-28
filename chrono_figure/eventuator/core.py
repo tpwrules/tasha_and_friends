@@ -122,9 +122,8 @@ class EventuatorCore(Elaboratable):
         self.o_prg_addr = Signal(PC_WIDTH)
         self.i_prg_data = Signal(INSN_WIDTH)
 
-        # register memory access signals (dual port)
+        # register memory access signals (dual port); read is always enabled
         self.o_reg_raddr = Signal(REGS_WIDTH)
-        self.o_reg_re = Signal()
         self.i_reg_rdata = Signal(DATA_WIDTH)
         self.o_reg_waddr = Signal(REGS_WIDTH)
         self.o_reg_we = Signal()
@@ -220,8 +219,7 @@ class EventuatorCore(Elaboratable):
         # if we're reading the same register we're writing, we should read the
         # data that we wrote
         m.d.sync += [
-            forward.eq((self.o_reg_raddr == self.o_reg_waddr) &
-                (self.o_reg_re == 1) & (self.o_reg_we == 1)),
+            forward.eq((self.o_reg_raddr == self.o_reg_waddr) & self.o_reg_we),
             forward_data.eq(self.o_reg_wdata),
         ]
         m.d.comb += [
@@ -236,7 +234,7 @@ class EventuatorCore(Elaboratable):
 
             with m.Case(InsnCode.COPY):
                 with m.If(cyc_rd_sel): # regular -> special
-                    m.d.comb += self.o_reg_re.eq(1)
+                    pass # register reading is always enabled
                 with m.Else(): # special -> regular
                     m.d.comb += self.o_spl_re.eq(1)
 
@@ -244,11 +242,9 @@ class EventuatorCore(Elaboratable):
                 pass
 
             with m.Case(InsnCode.MODIFY):
-                m.d.comb += [
-                    self.o_reg_re.eq(1),
-                    # incorporate offset in the read register from that unit
-                    self.o_reg_raddr.eq(cyc_rd_reg + self.i_mod_offset_rd),
-                ]
+                # incorporate offset in the read register from that unit
+                m.d.comb += self.o_reg_raddr.eq(
+                    cyc_rd_reg + self.i_mod_offset_rd)
 
         # handle writing data to registers
         reg_wr_mod = Signal() # write modified data

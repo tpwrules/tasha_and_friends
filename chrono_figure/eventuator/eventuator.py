@@ -21,9 +21,8 @@ class Eventuator(Elaboratable):
         self.o_prg_addr = Signal(PC_WIDTH)
         self.i_prg_data = Signal(INSN_WIDTH)
 
-        # register memory access signals (dual port)
+        # register memory access signals (dual port); read is always enabled
         self.o_reg_raddr = Signal(REGS_WIDTH)
-        self.o_reg_re = Signal()
         self.i_reg_rdata = Signal(DATA_WIDTH)
         self.o_reg_waddr = Signal(REGS_WIDTH)
         self.o_reg_we = Signal()
