@@ -67,7 +67,7 @@ class Eventuator(Elaboratable):
         m.submodules.alu = alu = self.alu
 
         # automatically wire up passed through signals
-        for name in set(dir(self)) & set(dir(core)):
+        for name in sorted(tuple(set(dir(self)) & set(dir(core)))):
             if name.startswith("i_"):
                 m.d.comb += getattr(core, name).eq(getattr(self, name))
             elif name.startswith("o_"):
